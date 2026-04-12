@@ -42,6 +42,14 @@ class Config:
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day, 50 per hour")
     RATELIMIT_STORAGE_URL = "memory://"
 
+    # Interview AI Config
+    INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
+    MAX_INTERVIEW_QUESTIONS = 10
+    FILLER_WORDS = [
+        "um", "uh", "like", "you know", "basically",
+        "literally", "actually", "right", "so"
+    ]
+
 
 class DevelopmentConfig(Config):
     """Development environment — extra debug info enabled."""

@@ -28,7 +28,7 @@ def create_app(env: str = None) -> Flask:
 
     # --- Import Models (required for Flask-Migrate to detect them) ---
     with app.app_context():
-        from app.models import User  # noqa: F401
+        from app.models import User, ChatMessage, InterviewSession, InterviewResponse  # noqa: F401
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
@@ -71,9 +71,13 @@ def _register_blueprints(app: Flask):
     from app.routes.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
 
+    from app.routes.chat import chat_bp
+    app.register_blueprint(chat_bp, url_prefix="/api")
+
+    from app.routes.interview import interview_bp
+    app.register_blueprint(interview_bp, url_prefix="/api/interview")
+
     # Future blueprints — uncomment as we build each phase
-    # from app.routes.chat import chat_bp
-    # app.register_blueprint(chat_bp, url_prefix="/api")
     # from app.routes.jobs import jobs_bp
     # app.register_blueprint(jobs_bp, url_prefix="/api")
 
