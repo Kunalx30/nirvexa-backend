@@ -23,6 +23,27 @@ class Config:
         "max_overflow": 20,           # Allow 20 extra connections under load
     }
 
+
+    # AI API Keys
+    GROQ_API_KEY        = os.getenv("GROQ_API_KEY")
+    DEEPSEEK_API_KEY    = os.getenv("DEEPSEEK_API_KEY")
+    GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY")
+    MISTRAL_API_KEY     = os.getenv("MISTRAL_API_KEY")
+
+    # AI Model Names
+    GROQ_MODEL_FAST     = "llama-3.3-70b-versatile"
+    GROQ_MODEL_FALLBACK = "llama3-8b-8192"
+    DEEPSEEK_MODEL      = "deepseek-chat"
+    DEEPSEEK_CODER      = "deepseek-coder"
+    GEMINI_MODEL        = "gemini-1.5-flash"
+    MISTRAL_MODEL       = "mistral-small-latest"
+
+    # Chat Config
+    MAX_CHAT_HISTORY    = 10   # last N messages sent as context
+    MAX_TOKENS_RESPONSE = 1024
+    CHAT_TEMPERATURE    = 0.7
+
+
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(

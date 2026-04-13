@@ -41,3 +41,14 @@ uuid==1.30
 python-dateutil==2.9.0
 
 gunicorn==22.0.0
+
+
+# AI / LLM
+groq==0.11.0
+openai==1.51.0
+google-generativeai==0.8.3
+mistralai==1.0.3
+langchain==0.3.7
+langchain-groq==0.2.1
+langchain-google-genai==2.0.4
+python-dotenv
