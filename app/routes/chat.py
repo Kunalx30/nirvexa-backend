@@ -1,4 +1,4 @@
-from flask import Blueprint, request, g
+from flask import Blueprint, request, g , current_app
 from app.database.db import db
 from app.models.chat_message import ChatMessage
 from app.middleware.auth_middleware import token_required

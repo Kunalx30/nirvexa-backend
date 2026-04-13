@@ -60,67 +60,172 @@ When you don't know something, say so clearly and suggest where to find the answ
 # ── Intent Classifier ─────────────────────────────────────────────────────────
 def classify_intent(message: str) -> Intent:
     """
-    Classify the user message into an intent category.
-    Uses keyword matching — fast and free, no API call needed.
+    Score-based intent classifier.
+    Every keyword category gets a weighted score.
+    Highest score wins — no false first-match triggers.
     """
     msg = message.lower().strip()
 
-    # Code questions
-    code_keywords = ["code", "program", "function", "bug", "error", "syntax",
-                     "python", "java", "javascript", "sql query", "algorithm",
-                     "leetcode", "hackerrank", "coding round"]
-    if any(k in msg for k in code_keywords):
-        return Intent.CODE_QUESTION
+    scores = {
+        Intent.CODE_QUESTION:    0,
+        Intent.RESUME_ANALYSIS:  0,
+        Intent.TECHNICAL_DS_ML:  0,
+        Intent.JOB_MATCHING:     0,
+        Intent.CAREER_PATH:      0,
+        Intent.INTERVIEW_PREP:   0,
+        Intent.SKILL_GAP:        0,
+        Intent.QUICK_FACTUAL:    0,
+        Intent.VOICE_EVALUATION: 0,
+        Intent.GENERAL_CAREER:   0,
+        Intent.GENERAL:          0,
+    }
 
-    # Resume analysis
-    resume_keywords = ["resume", "cv", "curriculum vitae", "ats", "resume score",
-                       "resume format", "resume tips", "resume review"]
-    if any(k in msg for k in resume_keywords):
-        return Intent.RESUME_ANALYSIS
+    # ── CODE keywords ─────────────────────────────────────────────
+    code_strong = ["write a function", "write code", "coding round",
+                   "leetcode", "hackerrank", "debug this", "fix this code",
+                   "code for", "program to", "algorithm for", "syntax error",
+                   "python code", "java code", "sql query", "write a program"]
+    code_weak   = ["code", "function", "program", "bug", "error",
+                   "python", "java", "javascript", "algorithm"]
 
-    # Technical DS/ML
-    tech_keywords = ["machine learning", "deep learning", "neural network", "data science",
-                     "pandas", "numpy", "tensorflow", "pytorch", "model", "dataset",
-                     "feature engineering", "overfitting", "random forest", "regression",
-                     "classification", "nlp", "computer vision", "statistics"]
-    if any(k in msg for k in tech_keywords):
-        return Intent.TECHNICAL_DS_ML
+    for k in code_strong:
+        if k in msg:
+            scores[Intent.CODE_QUESTION] += 3
+    for k in code_weak:
+        if k in msg:
+            scores[Intent.CODE_QUESTION] += 1
 
-    # Job matching
-    job_keywords = ["job", "opening", "vacancy", "hiring", "apply", "fresher job",
-                    "internship", "placement", "off campus", "walk in", "naukri",
-                    "linkedin job", "find job", "job search"]
-    if any(k in msg for k in job_keywords):
-        return Intent.JOB_MATCHING
+    # ── RESUME keywords ───────────────────────────────────────────
+    resume_strong = ["my resume", "analyze my resume", "review my resume",
+                     "resume score", "ats score", "resume feedback",
+                     "resume review", "resume tips", "resume format",
+                     "improve my resume", "resume analysis", "check my cv",
+                     "review my cv", "my cv"]
+    resume_weak   = ["resume", "cv", "ats", "curriculum vitae"]
 
-    # Career path
-    career_keywords = ["career path", "roadmap", "how to become", "career in",
-                       "switch career", "career change", "growth path", "career plan",
-                       "become a", "want to be", "career goal"]
-    if any(k in msg for k in career_keywords):
-        return Intent.CAREER_PATH
+    for k in resume_strong:
+        if k in msg:
+            scores[Intent.RESUME_ANALYSIS] += 3
+    for k in resume_weak:
+        if k in msg:
+            scores[Intent.RESUME_ANALYSIS] += 1
 
-    # Interview prep
-    interview_keywords = ["interview", "interview question", "hr round", "technical round",
-                          "tell me about yourself", "interview tips", "interview prep",
-                          "mock interview", "interview experience"]
-    if any(k in msg for k in interview_keywords):
-        return Intent.INTERVIEW_PREP
+    # ── TECHNICAL DS/ML keywords ──────────────────────────────────
+    tech_strong = ["machine learning", "deep learning", "neural network",
+                   "data science", "feature engineering", "overfitting",
+                   "random forest", "gradient boosting", "natural language processing",
+                   "computer vision", "model training", "hyperparameter"]
+    tech_weak   = ["pandas", "numpy", "tensorflow", "pytorch", "sklearn",
+                   "dataset", "model", "regression", "classification", "nlp",
+                   "statistics", "probability"]
 
-    # Skill gap
-    skill_keywords = ["skill gap", "what skills", "skills needed", "skills required",
-                      "missing skill", "learn for", "skills to get", "upskill"]
-    if any(k in msg for k in skill_keywords):
-        return Intent.SKILL_GAP
+    for k in tech_strong:
+        if k in msg:
+            scores[Intent.TECHNICAL_DS_ML] += 3
+    for k in tech_weak:
+        if k in msg:
+            scores[Intent.TECHNICAL_DS_ML] += 1
 
-    # Quick factual
-    factual_keywords = ["what is", "who is", "define", "meaning of", "full form",
-                        "difference between", "explain", "salary of", "package"]
-    if any(k in msg for k in factual_keywords):
-        return Intent.QUICK_FACTUAL
+    # ── JOB MATCHING keywords ─────────────────────────────────────
+    job_strong = ["find me a job", "job openings", "job vacancies",
+                  "hiring for", "apply for job", "fresher jobs",
+                  "internship openings", "off campus drive", "walk in interview",
+                  "jobs in", "jobs for"]
+    job_weak   = ["job", "opening", "vacancy", "hiring", "apply",
+                  "internship", "placement", "naukri", "linkedin job"]
 
-    return Intent.GENERAL_CAREER
+    for k in job_strong:
+        if k in msg:
+            scores[Intent.JOB_MATCHING] += 3
+    for k in job_weak:
+        if k in msg:
+            scores[Intent.JOB_MATCHING] += 1
 
+    # ── CAREER PATH keywords ──────────────────────────────────────
+    career_strong = ["career roadmap", "how to become", "career path",
+                     "career in", "switch to", "career change",
+                     "want to become", "become a", "steps to become",
+                     "career goal", "career plan"]
+    career_weak   = ["roadmap", "career", "growth", "future", "switch"]
+
+    for k in career_strong:
+        if k in msg:
+            scores[Intent.CAREER_PATH] += 3
+    for k in career_weak:
+        if k in msg:
+            scores[Intent.CAREER_PATH] += 1
+
+    # ── INTERVIEW PREP keywords ───────────────────────────────────
+    interview_strong = ["interview questions", "interview tips", "hr round",
+                        "technical round", "tell me about yourself",
+                        "mock interview", "interview preparation",
+                        "interview experience", "interview process"]
+    interview_weak   = ["interview", "hr", "aptitude", "placement prep"]
+
+    for k in interview_strong:
+        if k in msg:
+            scores[Intent.INTERVIEW_PREP] += 3
+    for k in interview_weak:
+        if k in msg:
+            scores[Intent.INTERVIEW_PREP] += 1
+
+    # ── SKILL GAP keywords ────────────────────────────────────────
+    skill_strong = ["skill gap", "what skills do i need", "skills required for",
+                    "missing skills", "skills to learn", "upskill for",
+                    "skills needed to", "what should i learn"]
+    skill_weak   = ["skills", "upskill", "learn", "missing"]
+
+    for k in skill_strong:
+        if k in msg:
+            scores[Intent.SKILL_GAP] += 3
+    for k in skill_weak:
+        if k in msg:
+            scores[Intent.SKILL_GAP] += 1
+
+    # ── QUICK FACTUAL keywords ────────────────────────────────────
+    factual_strong = ["what is", "who is", "full form of", "difference between",
+                      "define ", "meaning of", "explain what", "what does",
+                      "salary of", "average salary", "how much does"]
+    factual_weak   = ["what", "who", "define", "explain", "salary", "package"]
+
+    for k in factual_strong:
+        if k in msg:
+            scores[Intent.QUICK_FACTUAL] += 3
+    for k in factual_weak:
+        if k in msg:
+            scores[Intent.QUICK_FACTUAL] += 1
+
+    # ── Find winner ───────────────────────────────────────────────
+    best_intent = max(scores, key=lambda i: scores[i])
+    best_score  = scores[best_intent]
+
+    # If no strong signal — default to general career
+    if best_score == 0:
+        return Intent.GENERAL_CAREER
+
+    # Tie-breaking — CODE beats RESUME if both have same score
+    # (e.g. "Python resume parser code" — code intent wins)
+    if best_score > 0:
+        top_intents = [i for i, s in scores.items() if s == best_score]
+        if len(top_intents) > 1:
+            # Priority order for ties
+            priority = [
+                Intent.CODE_QUESTION,
+                Intent.TECHNICAL_DS_ML,
+                Intent.RESUME_ANALYSIS,
+                Intent.INTERVIEW_PREP,
+                Intent.CAREER_PATH,
+                Intent.JOB_MATCHING,
+                Intent.SKILL_GAP,
+                Intent.QUICK_FACTUAL,
+                Intent.GENERAL_CAREER,
+                Intent.GENERAL,
+            ]
+            for p in priority:
+                if p in top_intents:
+                    return p
+
+    return best_intent
 
 # ── Model Selector ────────────────────────────────────────────────────────────
 def select_model(intent: Intent) -> tuple[str, str, str, str]:
@@ -129,18 +234,41 @@ def select_model(intent: Intent) -> tuple[str, str, str, str]:
     based on the classified intent.
     """
     routing = {
-        Intent.GENERAL_CAREER:   ("groq",     "llama-3.3-70b-versatile", "mistral",  "mistral-small-latest"),
-        Intent.TECHNICAL_DS_ML:  ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
-        Intent.CODE_QUESTION: ("deepseek", "deepseek-chat", "groq", "llama-3.3-70b-versatile"),
-        Intent.RESUME_ANALYSIS:  ("gemini",   "gemini-1.5-flash",         "deepseek", "deepseek-chat"),
-        Intent.JOB_MATCHING:     ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
-        Intent.QUICK_FACTUAL:    ("mistral",  "mistral-small-latest",     "groq",     "llama3-8b-8192"),
-        Intent.CAREER_PATH:      ("groq",     "llama-3.3-70b-versatile",  "deepseek", "deepseek-chat"),
-        Intent.INTERVIEW_PREP:   ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
-        Intent.SKILL_GAP:        ("deepseek", "deepseek-chat",            "gemini",   "gemini-1.5-flash"),
-        Intent.VOICE_EVALUATION: ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
-        Intent.GENERAL:          ("groq",     "llama-3.3-70b-versatile",  "mistral",  "mistral-small-latest"),
-    }
+    # General career questions → Groq (fastest, high quality)
+    Intent.GENERAL_CAREER:   ("groq",     "llama-3.3-70b-versatile", "mistral",  "mistral-small-latest"),
+
+    # Technical DS/ML questions → DeepSeek (best reasoning)
+    Intent.TECHNICAL_DS_ML:  ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # Code questions → DeepSeek (best for code), Groq fallback
+    Intent.CODE_QUESTION:    ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # Resume analysis → Groq (128K context, fast, free), DeepSeek fallback
+    Intent.RESUME_ANALYSIS:  ("groq",     "llama-3.3-70b-versatile",  "deepseek", "deepseek-chat"),
+
+    # Job matching → DeepSeek (complex reasoning), Groq fallback
+    Intent.JOB_MATCHING:     ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # Quick factual → Mistral (lightweight, saves quota), Groq fallback
+    Intent.QUICK_FACTUAL:    ("mistral",  "mistral-small-latest",     "groq",     "llama3-8b-8192"),
+
+    # Career path → Groq (creative long-form output), DeepSeek fallback
+    Intent.CAREER_PATH:      ("groq",     "llama-3.3-70b-versatile",  "deepseek", "deepseek-chat"),
+
+    # Interview prep → DeepSeek (analytical depth), Groq fallback
+    Intent.INTERVIEW_PREP:   ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # Skill gap → DeepSeek (precise comparison), Groq fallback
+    Intent.SKILL_GAP:        ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # Voice evaluation → DeepSeek (analytical scoring), Groq fallback
+    Intent.VOICE_EVALUATION: ("deepseek", "deepseek-chat",            "groq",     "llama-3.3-70b-versatile"),
+
+    # General fallback → Groq, Mistral fallback
+    Intent.GENERAL:          ("groq",     "llama-3.3-70b-versatile",  "mistral",  "mistral-small-latest"),
+}
+    
+    
     return routing.get(intent, routing[Intent.GENERAL])
 
 
@@ -172,26 +300,30 @@ def _call_deepseek(model: str, messages: list, max_tokens: int, temperature: flo
 
 def _call_gemini(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     genai.configure(api_key=current_app.config["GEMINI_API_KEY"])
+
+    # Use a shorter system instruction for Gemini to save tokens
+    gemini_system = (
+        "You are NirVexa, an AI career coach for Indian students and professionals. "
+        "Give helpful, specific, actionable career advice tailored to the Indian job market."
+    )
+
     gemini_model = genai.GenerativeModel(
         model_name=model,
-        system_instruction=messages[0]["content"] if messages[0]["role"] == "system" else None,
+        system_instruction=gemini_system,
         generation_config=genai.GenerationConfig(
             max_output_tokens=max_tokens,
             temperature=temperature,
         )
     )
-    # Convert messages to Gemini format (skip system message)
-    chat_messages = [
-        {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
-        for m in messages if m["role"] != "system"
-    ]
-    if not chat_messages:
-        return "I could not process that request."
 
-    chat = gemini_model.start_chat(history=chat_messages[:-1])
-    response = chat.send_message(chat_messages[-1]["parts"][0])
+    # Only pass the last user message to Gemini — saves tokens
+    last_user_msg = next(
+        (m["content"] for m in reversed(messages) if m["role"] == "user"),
+        ""
+    )
+
+    response = gemini_model.generate_content(last_user_msg)
     return response.text
-
 
 def _call_mistral(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     client = Mistral(api_key=current_app.config["MISTRAL_API_KEY"])

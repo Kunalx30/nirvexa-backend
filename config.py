@@ -35,7 +35,7 @@ class Config:
     GROQ_MODEL_FALLBACK = "llama3-8b-8192"
     DEEPSEEK_MODEL      = "deepseek-chat"
     DEEPSEEK_CODER      = "deepseek-coder"
-    GEMINI_MODEL        = "gemini-1.5-flash"
+    GEMINI_MODEL        = "gemini-2.5-flash"
     MISTRAL_MODEL       = "mistral-small-latest"
 
     # Chat Config
