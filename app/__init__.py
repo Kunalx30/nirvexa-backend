@@ -35,15 +35,18 @@ def create_app(env: str = None) -> Flask:
 
     # --- Initialize CORS ---
     CORS(app, resources={
-        r"/api/*": {
-            "origins": [
-                app.config["FRONTEND_URL"],
-                "http://localhost:3000",
-                "http://localhost:5173",
-            ],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
-        }
+    r"/api/*": {
+        "origins": [
+            app.config["FRONTEND_URL"],
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "https://nirvexa-frontend.vercel.app",  # 🔥 ADD THIS
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True  # 🔥 ADD THIS
+    }
     })
 
     # --- Register Blueprints (Routes) ---
