@@ -16,6 +16,24 @@ def create_app(env: str = None) -> Flask:
     """
     app = Flask(__name__)
 
+    from flask import Flask
+from flask_cors import CORS
+
+def create_app():
+    app = Flask(__name__)
+
+    # ✅ ADD THIS HERE (TOP — BEFORE ROUTES)
+    CORS(app, supports_credentials=True)
+
+    # 👇 THEN everything else
+    from app.routes.auth import auth_bp
+    from app.routes.chat import chat_bp
+
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(chat_bp, url_prefix='/api/chat')
+
+    return app
+
     # --- Load Config ---
     env = env or os.getenv("FLASK_ENV", "development")
     app.config.from_object(config_map[env])
