@@ -36,11 +36,7 @@ def create_app(env: str = None) -> Flask:
     # --- Initialize CORS ---
     from flask_cors import CORS
 
-    CORS(
-    app,
-    resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=True
-    )
+    CORS(app, supports_credentials=True)
 
     # --- Register Blueprints (Routes) ---
     _register_blueprints(app)
