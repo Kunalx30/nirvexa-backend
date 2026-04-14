@@ -34,20 +34,13 @@ def create_app(env: str = None) -> Flask:
     limiter.init_app(app)
 
     # --- Initialize CORS ---
-    CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            app.config["FRONTEND_URL"],
-            "http://localhost:3000",
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "https://nirvexa-frontend.vercel.app",  # 🔥 ADD THIS
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True  # 🔥 ADD THIS
-    }
-    })
+    from flask_cors import CORS
+
+    CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    supports_credentials=True
+    )
 
     # --- Register Blueprints (Routes) ---
     _register_blueprints(app)
