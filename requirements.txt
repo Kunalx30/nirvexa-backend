@@ -29,6 +29,7 @@ requests==2.32.3
 # Logging
 colorlog==6.9.0
 
+
 # Security
 Flask-Talisman==1.1.0
 
