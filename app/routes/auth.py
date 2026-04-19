@@ -153,7 +153,7 @@ def google_login():
     if not data:
         return error_response("Request body is required", 400)
 
-    id_token = data.get("id_token", "").strip()
+    id_token = (data.get("idToken") or data.get("id_token") or "").strip()
     if not id_token:
         return error_response("Google ID token is required", 400)
 
