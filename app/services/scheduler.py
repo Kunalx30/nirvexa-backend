@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 
+# Stored at module level so run_daily_job_pipeline can access it
+_app = None
+
 
 def run_daily_job_pipeline():
     """
@@ -42,29 +45,40 @@ def run_daily_job_pipeline():
     total_skipped = 0
     total_errors = 0
 
-    # Run scrapers in parallel — max 3 at a time to avoid rate limits
+    # Step 1 — Scrape all sources in parallel (no DB, no app context needed)
+    all_jobs = {}
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
             executor.submit(fn): source
             for source, fn in scrapers.items()
         }
-
         for future in as_completed(future_to_source):
             source = future_to_source[future]
             try:
                 jobs = future.result()
+                all_jobs[source] = jobs
+                logger.info(f"[{source}] scraped {len(jobs)} jobs")
+            except Exception as e:
+                logger.error(f"[{source}] Scrape error: {e}")
+                all_jobs[source] = []
+
+    # Step 2 — Insert all jobs inside app context
+    with _app.app_context():
+        for source, jobs in all_jobs.items():
+            if not jobs:
+                continue
+            try:
                 stats = insert_jobs(jobs)
                 logger.info(
-                    f"[{source}] fetched={len(jobs)} "
-                    f"inserted={stats['inserted']} "
+                    f"[{source}] inserted={stats['inserted']} "
                     f"skipped={stats['skipped']} "
                     f"errors={stats['errors']}"
                 )
                 total_inserted += stats['inserted']
-                total_skipped += stats['skipped']
-                total_errors += stats['errors']
+                total_skipped  += stats['skipped']
+                total_errors   += stats['errors']
             except Exception as e:
-                logger.error(f"[{source}] Pipeline error: {e}")
+                logger.error(f"[{source}] Insert error: {e}")
 
     logger.info(
         f"=== Pipeline Done | "
@@ -73,11 +87,11 @@ def run_daily_job_pipeline():
         f"errors={total_errors} ==="
     )
 
-    # Rebuild FAISS index with newly inserted jobs
+    # Step 3 — Rebuild FAISS index with newly inserted jobs
     logger.info("[Scheduler] Rebuilding FAISS semantic search index...")
     try:
         from app.services.rag_pipeline import rebuild_index
-        stats = rebuild_index()
+        stats = rebuild_index(app=_app)
         logger.info(f"[Scheduler] FAISS rebuild complete: {stats}")
     except Exception as e:
         logger.error(f"[Scheduler] FAISS rebuild failed: {e}")
@@ -85,8 +99,10 @@ def run_daily_job_pipeline():
 
 def init_scheduler(app):
     """Call this from create_app() to start the scheduler."""
+    global _app
+    _app = app  # store app reference for use in pipeline
+
     with app.app_context():
-        # 2AM IST = 20:30 UTC
         scheduler.add_job(
             run_daily_job_pipeline,
             CronTrigger(hour=20, minute=30, timezone=pytz.utc),
