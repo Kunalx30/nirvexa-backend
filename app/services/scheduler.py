@@ -7,7 +7,8 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
-_app = None  # stored app reference for context
+
+_app = None   # stored at init time so the pipeline thread can use it
 
 
 def run_daily_job_pipeline():
@@ -39,12 +40,9 @@ def run_daily_job_pipeline():
     }
 
     logger.info("=== Daily Job Pipeline Started ===")
-    total_inserted = 0
-    total_skipped  = 0
-    total_errors   = 0
 
-    # ── Step 1: Run all scrapers in parallel (no DB needed) ───────────────────
-    all_jobs = {}
+    # ── Step 1: Scrape all sources in parallel (no DB, no context needed) ──────
+    all_jobs_by_source = {}
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
             executor.submit(fn): source
@@ -54,46 +52,52 @@ def run_daily_job_pipeline():
             source = future_to_source[future]
             try:
                 jobs = future.result()
-                all_jobs[source] = jobs
-                logger.info(f"[{source}] scraped {len(jobs)} jobs")
+                all_jobs_by_source[source] = jobs
+                logger.info("[%s] scraped %d jobs", source, len(jobs))
             except Exception as e:
-                logger.error(f"[{source}] Scraper error: {e}")
-                all_jobs[source] = []
+                logger.error("[%s] Scraper error: %s", source, e)
+                all_jobs_by_source[source] = []
 
     # ── Step 2: Insert all jobs inside app context ────────────────────────────
-    with _app.app_context():
-        for source, jobs in all_jobs.items():
+    total_inserted = 0
+    total_skipped  = 0
+    total_errors   = 0
+
+    ctx = _app.app_context() if _app else None
+    if ctx:
+        ctx.push()
+
+    try:
+        for source, jobs in all_jobs_by_source.items():
             if not jobs:
                 continue
             try:
                 stats = insert_jobs(jobs)
                 logger.info(
-                    f"[{source}] inserted={stats['inserted']} "
-                    f"skipped={stats['skipped']} "
-                    f"errors={stats['errors']}"
+                    "[%s] inserted=%d skipped=%d errors=%d",
+                    source, stats['inserted'], stats['skipped'], stats['errors']
                 )
                 total_inserted += stats['inserted']
                 total_skipped  += stats['skipped']
                 total_errors   += stats['errors']
             except Exception as e:
-                logger.error(f"[{source}] Insert error: {e}")
+                logger.error("[%s] Insert error: %s", source, e)
+    finally:
+        if ctx:
+            ctx.pop()
 
     logger.info(
-        f"=== Pipeline Done | "
-        f"inserted={total_inserted} "
-        f"skipped={total_skipped} "
-        f"errors={total_errors} ==="
+        "=== Pipeline Done | inserted=%d skipped=%d errors=%d ===",
+        total_inserted, total_skipped, total_errors
     )
 
-    # ── Step 3: Rebuild FAISS index in background thread ─────────────────────
-    # Uses rebuild_index(app) which spawns its own thread — never blocks here
-    logger.info("[Scheduler] Rebuilding FAISS semantic search index...")
+    # ── Step 3: Rebuild FAISS index in background (non-blocking) ─────────────
+    logger.info("[Scheduler] Triggering FAISS rebuild in background...")
     try:
         from app.services.rag_pipeline import rebuild_index
-        result = rebuild_index(app=_app)
-        logger.info(f"[Scheduler] FAISS rebuild triggered: {result}")
+        rebuild_index(app=_app)   # returns immediately — runs in its own thread
     except Exception as e:
-        logger.error(f"[Scheduler] FAISS rebuild failed to start: {e}")
+        logger.error("[Scheduler] FAISS rebuild trigger failed: %s", e)
 
 
 def init_scheduler(app):
