@@ -54,7 +54,16 @@ def create_app(env: str = None) -> Flask:
     # --- Register Error Handlers ---
     _register_error_handlers(app)
 
+    # --- Initialize Scheduler ---
     init_scheduler(app)
+
+    # --- Initialize FAISS Semantic Search Index ---
+    # Runs in a background thread — does NOT block app startup.
+    # Loads from disk if nirvexa_jobs.index exists, else builds fresh from DB.
+    with app.app_context():
+        from app.services.rag_pipeline import load_or_build_index
+        load_or_build_index()
+    app.logger.info("FAISS index load triggered at startup.")
 
     # --- Health Check ---
     @app.route("/api/health", methods=["GET"])

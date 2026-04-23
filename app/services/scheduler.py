@@ -73,6 +73,15 @@ def run_daily_job_pipeline():
         f"errors={total_errors} ==="
     )
 
+    # Rebuild FAISS index with newly inserted jobs
+    logger.info("[Scheduler] Rebuilding FAISS semantic search index...")
+    try:
+        from app.services.rag_pipeline import rebuild_index
+        stats = rebuild_index()
+        logger.info(f"[Scheduler] FAISS rebuild complete: {stats}")
+    except Exception as e:
+        logger.error(f"[Scheduler] FAISS rebuild failed: {e}")
+
 
 def init_scheduler(app):
     """Call this from create_app() to start the scheduler."""
