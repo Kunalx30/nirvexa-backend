@@ -51,13 +51,13 @@ langsmith==0.1.147
 
 # --- FAISS Semantic Search (Phase 5.6) ---
 faiss-cpu==1.13.2
-sentence-transformers==5.4.1
-torch==2.11.0
-transformers==5.6.0
-tokenizers==0.22.2
-safetensors==0.7.0
-huggingface_hub==1.11.0
-hf-xet==1.4.3
+# sentence-transformers==5.4.1
+# torch==2.11.0
+# transformers==5.6.0
+# tokenizers==0.22.2
+# safetensors==0.7.0
+# huggingface_hub==1.11.0
+# hf-xet==1.4.3
 
 # --- ML / Numeric ---
 numpy==1.26.4
