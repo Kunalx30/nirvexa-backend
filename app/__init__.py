@@ -58,12 +58,14 @@ def create_app(env: str = None) -> Flask:
     init_scheduler(app)
 
     # --- Initialize FAISS Semantic Search Index ---
-    # Runs in a background thread — does NOT block app startup.
-    # Loads from disk if nirvexa_jobs.index exists, else builds fresh from DB.
-    with app.app_context():
-        from app.services.rag_pipeline import load_or_build_index
-        load_or_build_index()
-    app.logger.info("FAISS index load triggered at startup.")
+    # Deferred to first request — prevents Render port-bind timeout
+    @app.before_request
+    def _init_faiss_once():
+         from app.services.rag_pipeline import load_or_build_index, _index
+         if _index is None:
+            load_or_build_index()
+        # Remove itself after first call so it never runs again
+         app.before_request_funcs[None].remove(_init_faiss_once)
 
     # --- Health Check ---
     @app.route("/api/health", methods=["GET"])
