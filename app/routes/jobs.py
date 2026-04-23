@@ -28,7 +28,7 @@ from app.services.rag_pipeline import (
     rebuild_index,
     get_index_status,
 )
-from app.utils.auth import token_required   # your existing @token_required decorator
+from app.middleware.auth_middleware import token_required   # your existing @token_required decorator
 
 logger = logging.getLogger(__name__)
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
