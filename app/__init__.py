@@ -58,14 +58,10 @@ def create_app(env: str = None) -> Flask:
     init_scheduler(app)
 
     # --- Initialize FAISS Semantic Search Index ---
-    # Deferred to first request — prevents Render port-bind timeout
-    @app.before_request
-    def _init_faiss_once():
-         from app.services.rag_pipeline import load_or_build_index, _index
-         if _index is None:
-            load_or_build_index()
-        # Remove itself after first call so it never runs again
-         app.before_request_funcs[None].remove(_init_faiss_once)
+    # Pass app object so background thread can push its own app context
+    from app.services.rag_pipeline import load_or_build_index
+    load_or_build_index(app)
+    app.logger.info("FAISS index load triggered at startup.")
 
     # --- Health Check ---
     @app.route("/api/health", methods=["GET"])
