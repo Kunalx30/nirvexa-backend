@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from app.database.db import db
+from app.extensions import db
 
 
 class ChatMessage(db.Model):
