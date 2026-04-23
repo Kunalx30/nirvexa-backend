@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 INDEX_PATH   = "nirvexa_jobs.index"
 ID_MAP_PATH  = "nirvexa_jobs_ids.npy"
-VECTOR_DIM   = 768          # Gemini text-embedding-004 output dimension
+VECTOR_DIM   = 768
 GEMINI_MODEL = "models/text-embedding-004"
-BATCH_SIZE   = 100          # Gemini free tier: 1500 req/min, batch safely
+BATCH_SIZE   = 100
 
 # ─────────────────────────────────────────────
 # Singletons
@@ -84,7 +84,7 @@ def _embed_query(query: str) -> np.ndarray:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 2. Text builder — converts Job ORM → searchable string
+# 2. Text builder
 # ═══════════════════════════════════════════════════════════════════
 
 def _job_to_text(job) -> str:
@@ -158,8 +158,10 @@ def _load_from_disk():
 # 4. Public API
 # ═══════════════════════════════════════════════════════════════════
 
-def load_or_build_index() -> None:
-    """Called at app startup — non-blocking background thread."""
+def load_or_build_index(app=None) -> None:
+    """Called at app startup — non-blocking background thread.
+    Pass the Flask app object so the thread can push its own app context.
+    """
     def _init():
         global _index, _id_map
         with _lock:
@@ -169,21 +171,29 @@ def load_or_build_index() -> None:
             else:
                 logger.info("[FAISS] No disk index — building from DB.")
                 try:
-                    _index, _id_map = _build_index_from_db()
+                    if app:
+                        with app.app_context():
+                            _index, _id_map = _build_index_from_db()
+                    else:
+                        _index, _id_map = _build_index_from_db()
                 except Exception as e:
                     logger.error("[FAISS] Startup build failed: %s", e)
 
     threading.Thread(target=_init, daemon=True, name="faiss-startup").start()
 
 
-def rebuild_index() -> dict:
+def rebuild_index(app=None) -> dict:
     """Called by scheduler after nightly scrape."""
     global _index, _id_map
     started_at = datetime.utcnow()
 
     with _lock:
         try:
-            _index, _id_map = _build_index_from_db()
+            if app:
+                with app.app_context():
+                    _index, _id_map = _build_index_from_db()
+            else:
+                _index, _id_map = _build_index_from_db()
             elapsed = (datetime.utcnow() - started_at).total_seconds()
             return {
                 "status":        "success",
@@ -200,10 +210,7 @@ def rebuild_index() -> dict:
 # ═══════════════════════════════════════════════════════════════════
 
 def search_jobs(query: str, k: int = 20) -> list:
-    """
-    Returns list of job UUID strings matching the query.
-    Returns [] if index not ready yet.
-    """
+    """Returns list of job UUID strings. Returns [] if index not ready."""
     global _index, _id_map
 
     if _index is None or _index.ntotal == 0:
@@ -236,9 +243,7 @@ def search_jobs(query: str, k: int = 20) -> list:
 # ═══════════════════════════════════════════════════════════════════
 
 def match_jobs_by_skills(skills: list, k: int = 10) -> list:
-    """
-    Returns list of {"job_id": str, "match_percentage": float}
-    """
+    """Returns list of {"job_id": str, "match_percentage": float}"""
     global _index, _id_map
 
     if _index is None or _index.ntotal == 0 or not skills:
@@ -260,7 +265,6 @@ def match_jobs_by_skills(skills: list, k: int = 10) -> list:
             similarity = max(0.0, 1.0 - (float(dist) / 2.0))
             match_pct  = round(similarity * 100, 1)
 
-            # Boost for explicit skill matches
             job = Job.query.get(job_id)
             if job and job.skills:
                 job_skills_lower  = [s.lower() for s in job.skills]
@@ -285,10 +289,10 @@ def match_jobs_by_skills(skills: list, k: int = 10) -> list:
 
 def get_index_status() -> dict:
     return {
-        "index_ready":   _index is not None,
-        "vectors_total": _index.ntotal if _index else 0,
-        "id_map_size":   len(_id_map),
-        "index_on_disk": os.path.exists(INDEX_PATH),
+        "index_ready":     _index is not None,
+        "vectors_total":   _index.ntotal if _index else 0,
+        "id_map_size":     len(_id_map),
+        "index_on_disk":   os.path.exists(INDEX_PATH),
         "embedding_model": GEMINI_MODEL,
-        "vector_dim":    VECTOR_DIM,
+        "vector_dim":      VECTOR_DIM,
     }
