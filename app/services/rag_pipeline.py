@@ -165,7 +165,12 @@ def _build_index_from_db():
     logger.info("[FAISS] Embedding %d jobs via Gemini...", len(jobs))
     texts = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in jobs]
     uuids = [str(j.id) for j in jobs]
-    vecs  = _embed_texts(texts)
+    
+    vecs = _embed_texts(texts)
+    
+    # Debug shape and type before adding to FAISS
+    logger.info("[FAISS] vecs shape: %s dtype: %s", vecs.shape, vecs.dtype)
+    assert vecs.shape == (len(jobs), VECTOR_DIM), f"Shape mismatch: {vecs.shape}"
 
     index = faiss.IndexFlatL2(VECTOR_DIM)
     index.add(vecs)
@@ -260,10 +265,10 @@ def get_index_status() -> dict:
     """Admin diagnostic — returns current index state."""
     global _index, _id_map
     return {
-        "index_ready":     _index is not None and _index.ntotal > 0,
-        "vectors_total":   _index.ntotal if _index else 0,
-        "id_map_size":     len(_id_map),
-        "vector_dim":      VECTOR_DIM,
-        "embedding_model": GEMINI_MODEL,
-        "index_on_disk":   os.path.exists(INDEX_PATH),
+        "index_ready":      _index is not None and _index.ntotal > 0,
+        "vectors_total":    _index.ntotal if _index else 0,
+        "id_map_size":      len(_id_map),
+        "vector_dim":       VECTOR_DIM,
+        "embedding_model":  GEMINI_MODEL,
+        "index_on_disk":    os.path.exists(INDEX_PATH),
     }
