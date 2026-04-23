@@ -6,11 +6,12 @@ No sentence-transformers, no torch — works within 512MB RAM limit.
 
 Gemini model: models/gemini-embedding-001
 Dimensions: 768
-Cost: Free tier (1500 requests/minute)
+Free tier: 100 requests/minute, 1500 requests/day
 """
 
 import logging
 import os
+import re
 import threading
 import time
 import pickle
@@ -22,17 +23,19 @@ import google.generativeai as genai
 logger = logging.getLogger(__name__)
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-GEMINI_MODEL  = "models/gemini-embedding-001"
-VECTOR_DIM    = 768
-INDEX_PATH    = "nirvexa_jobs.index"
-IDMAP_PATH    = "nirvexa_jobs_idmap.pkl"
-BATCH_SIZE    = 50          # embed 50 jobs at a time (Gemini rate-limit friendly)
-BATCH_DELAY   = 1.0         # seconds between batches
+GEMINI_MODEL   = "models/gemini-embedding-001"
+VECTOR_DIM     = 768
+INDEX_PATH     = "nirvexa_jobs.index"
+IDMAP_PATH     = "nirvexa_jobs_idmap.pkl"
+BATCH_SIZE     = 50     # 50 texts per call (Gemini max)
+BATCH_DELAY    = 1.0    # seconds between successful batches
+MAX_RETRIES    = 5      # retries per batch on 429
+DEFAULT_RETRY  = 65     # seconds to wait on 429 if no retry_delay in error
 
 # ─── Globals ───────────────────────────────────────────────────────────────────
-_index:   faiss.Index | None = None
-_id_map:  list[str]          = []   # position → job UUID
-_lock     = threading.Lock()
+_index:  faiss.Index | None = None
+_id_map: list[str]          = []    # position → job UUID
+_lock    = threading.Lock()
 
 # ─── Gemini setup ──────────────────────────────────────────────────────────────
 def _configure_gemini():
@@ -46,41 +49,84 @@ def _configure_gemini():
     genai.configure(api_key=api_key)
 
 
+def _parse_retry_delay(error_str: str) -> int:
+    """Extract retry delay seconds from Gemini 429 error message."""
+    match = re.search(r'retry[_\s]in\s+([\d.]+)s', str(error_str), re.IGNORECASE)
+    if match:
+        return int(float(match.group(1))) + 5   # +5s buffer
+    return DEFAULT_RETRY
+
+
 # ─── Embed helpers ─────────────────────────────────────────────────────────────
-def _embed_texts(texts: list[str]) -> np.ndarray:
-    """Embed a list of strings via Gemini. Returns float32 ndarray (N, 768)."""
-    _configure_gemini()
-    vectors = []
-    for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i : i + BATCH_SIZE]
+def _embed_batch_with_retry(batch: list[str], batch_start: int) -> list:
+    """
+    Embed one batch with retry on 429.
+    Returns list of embedding vectors (length = len(batch)).
+    Falls back to zero vectors only after MAX_RETRIES exhausted.
+    """
+    for attempt in range(1, MAX_RETRIES + 1):
         try:
             result = genai.embed_content(
                 model=GEMINI_MODEL,
                 content=batch,
                 task_type="RETRIEVAL_DOCUMENT",
             )
-            for emb in result["embedding"]:
-                vectors.append(emb)
-            logger.info("[FAISS] Embedded batch %d-%d", i, i + len(batch))
-            if i + BATCH_SIZE < len(texts):
-                time.sleep(BATCH_DELAY)
+            logger.info("[FAISS] Embedded batch %d-%d", batch_start, batch_start + len(batch))
+            return result["embedding"]
+
         except Exception as e:
-            logger.error("[FAISS] Embed batch %d failed: %s", i, e)
-            # Fill with zeros so index positions stay aligned
-            for _ in batch:
-                vectors.append([0.0] * VECTOR_DIM)
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower():
+                wait = _parse_retry_delay(err_str)
+                logger.warning(
+                    "[FAISS] 429 on batch %d (attempt %d/%d) — sleeping %ds",
+                    batch_start, attempt, MAX_RETRIES, wait
+                )
+                time.sleep(wait)
+            else:
+                # Non-rate-limit error — don't retry
+                logger.error("[FAISS] Embed batch %d failed (non-429): %s", batch_start, e)
+                break
+
+    # All retries exhausted — use zero vectors to keep index positions aligned
+    logger.error("[FAISS] Batch %d: all retries failed, using zero vectors", batch_start)
+    return [[0.0] * VECTOR_DIM for _ in batch]
+
+
+def _embed_texts(texts: list[str]) -> np.ndarray:
+    """Embed a list of strings via Gemini. Returns float32 ndarray (N, 768)."""
+    _configure_gemini()
+    vectors = []
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i: i + BATCH_SIZE]
+        embeddings = _embed_batch_with_retry(batch, i)
+        vectors.extend(embeddings)
+        # Delay between batches to stay under 100 req/min
+        if i + BATCH_SIZE < len(texts):
+            time.sleep(BATCH_DELAY)
     return np.array(vectors, dtype="float32")
 
 
 def _embed_query(query: str) -> np.ndarray:
-    """Embed a single search query string."""
+    """Embed a single search query string, with 429 retry."""
     _configure_gemini()
-    result = genai.embed_content(
-        model=GEMINI_MODEL,
-        content=query,
-        task_type="RETRIEVAL_QUERY",
-    )
-    return np.array([result["embedding"]], dtype="float32")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            result = genai.embed_content(
+                model=GEMINI_MODEL,
+                content=query,
+                task_type="RETRIEVAL_QUERY",
+            )
+            return np.array([result["embedding"]], dtype="float32")
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower():
+                wait = _parse_retry_delay(err_str)
+                logger.warning("[FAISS] Query embed 429 (attempt %d/%d) — sleeping %ds", attempt, MAX_RETRIES, wait)
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("[FAISS] Query embed failed after all retries")
 
 
 # ─── Disk persistence ──────────────────────────────────────────────────────────
@@ -114,14 +160,12 @@ def _build_index_from_db():
 
     if not jobs:
         logger.warning("[FAISS] No active jobs — building empty index.")
-        empty = faiss.IndexFlatL2(VECTOR_DIM)
-        return empty, []
+        return faiss.IndexFlatL2(VECTOR_DIM), []
 
     logger.info("[FAISS] Embedding %d jobs via Gemini...", len(jobs))
-
-    texts  = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in jobs]
-    uuids  = [str(j.id) for j in jobs]
-    vecs   = _embed_texts(texts)
+    texts = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in jobs]
+    uuids = [str(j.id) for j in jobs]
+    vecs  = _embed_texts(texts)
 
     index = faiss.IndexFlatL2(VECTOR_DIM)
     index.add(vecs)
@@ -159,9 +203,9 @@ def load_or_build_index(app=None) -> None:
 
 def rebuild_index(app=None) -> dict:
     """
-    Rebuild the FAISS index from scratch — called from scheduler after scrape.
-    Runs in a BACKGROUND THREAD so it never blocks gunicorn workers.
-    Returns immediately with a status message.
+    Rebuild FAISS index from scratch — called from scheduler after scrape.
+    Runs in background thread — never blocks gunicorn workers.
+    Returns immediately.
     """
     def _rebuild():
         global _index, _id_map
@@ -185,10 +229,7 @@ def rebuild_index(app=None) -> dict:
 
 
 def search_jobs(query: str, k: int = 20) -> list[str]:
-    """
-    Semantic search — returns list of job UUIDs ranked by similarity.
-    Falls back to empty list if index not ready yet.
-    """
+    """Semantic search — returns list of job UUIDs ranked by similarity."""
     global _index, _id_map
     if _index is None or _index.ntotal == 0:
         logger.warning("[FAISS] Index not ready — returning empty results.")
@@ -204,31 +245,25 @@ def search_jobs(query: str, k: int = 20) -> list[str]:
 
 
 def match_jobs_by_skills(skills: list[str], k: int = 10) -> list[dict]:
-    """
-    Skill-based matching — returns list of {job_id, match_score} dicts.
-    """
+    """Skill-based matching — returns list of {job_id, match_score} dicts."""
     if not skills:
         return []
     query = " ".join(skills)
     uuids = search_jobs(query, k=k)
-    if not uuids:
-        return []
-    # Assign rough match scores based on rank
-    results = []
-    for rank, uid in enumerate(uuids):
-        score = max(100 - rank * 8, 20)
-        results.append({"job_id": uid, "match_score": score})
-    return results
+    return [
+        {"job_id": uid, "match_score": max(100 - rank * 8, 20)}
+        for rank, uid in enumerate(uuids)
+    ]
 
 
 def get_index_status() -> dict:
     """Admin diagnostic — returns current index state."""
     global _index, _id_map
     return {
-        "index_ready":   _index is not None and _index.ntotal > 0,
-        "vectors_total": _index.ntotal if _index else 0,
-        "id_map_size":   len(_id_map),
-        "vector_dim":    VECTOR_DIM,
+        "index_ready":     _index is not None and _index.ntotal > 0,
+        "vectors_total":   _index.ntotal if _index else 0,
+        "id_map_size":     len(_id_map),
+        "vector_dim":      VECTOR_DIM,
         "embedding_model": GEMINI_MODEL,
-        "index_on_disk": os.path.exists(INDEX_PATH),
+        "index_on_disk":   os.path.exists(INDEX_PATH),
     }
