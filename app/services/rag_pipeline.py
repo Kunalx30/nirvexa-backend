@@ -4,7 +4,7 @@ NirVexa — Phase 5.6: FAISS Semantic Search
 Uses Google Gemini embedding API (free, zero memory cost on Render free tier)
 No sentence-transformers, no torch — works within 512MB RAM limit.
 
-Gemini model: models/text-embedding-004
+Gemini model: models/embedding-001
 Dimensions:   768
 Cost:         Free (1500 requests/min on free tier)
 """
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 INDEX_PATH   = "nirvexa_jobs.index"
 ID_MAP_PATH  = "nirvexa_jobs_ids.npy"
 VECTOR_DIM   = 768
-GEMINI_MODEL = "models/text-embedding-004"
+GEMINI_MODEL = "models/embedding-001"
 BATCH_SIZE   = 100
 
 # ─────────────────────────────────────────────
