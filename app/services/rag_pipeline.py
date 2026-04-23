@@ -84,11 +84,9 @@ def _embed_batch_with_retry(batch: list[str], batch_start: int) -> list:
                 )
                 time.sleep(wait)
             else:
-                # Non-rate-limit error — don't retry
                 logger.error("[FAISS] Embed batch %d failed (non-429): %s", batch_start, e)
                 break
 
-    # All retries exhausted — use zero vectors to keep index positions aligned
     logger.error("[FAISS] Batch %d: all retries failed, using zero vectors", batch_start)
     return [[0.0] * VECTOR_DIM for _ in batch]
 
@@ -101,7 +99,6 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
         batch = texts[i: i + BATCH_SIZE]
         embeddings = _embed_batch_with_retry(batch, i)
         vectors.extend(embeddings)
-        # Delay between batches to stay under 100 req/min
         if i + BATCH_SIZE < len(texts):
             time.sleep(BATCH_DELAY)
     return np.array(vectors, dtype="float32")
@@ -165,12 +162,12 @@ def _build_index_from_db():
     logger.info("[FAISS] Embedding %d jobs via Gemini...", len(jobs))
     texts = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in jobs]
     uuids = [str(j.id) for j in jobs]
-    
+
     vecs = _embed_texts(texts)
-    
-    # Debug shape and type before adding to FAISS
+
     logger.info("[FAISS] vecs shape: %s dtype: %s", vecs.shape, vecs.dtype)
-    assert vecs.shape == (len(jobs), VECTOR_DIM), f"Shape mismatch: {vecs.shape}"
+    if vecs.shape != (len(jobs), VECTOR_DIM):
+        raise ValueError(f"[FAISS] Shape mismatch: got {vecs.shape}, expected ({len(jobs)}, {VECTOR_DIM})")
 
     index = faiss.IndexFlatL2(VECTOR_DIM)
     index.add(vecs)
@@ -183,8 +180,9 @@ def _build_index_from_db():
 # ─── Public API ────────────────────────────────────────────────────────────────
 def load_or_build_index(app=None) -> None:
     """
-    Called at app startup — non-blocking background thread.
-    Pass the Flask app object so the thread can push its own context.
+    Called at app startup — tries disk load ONLY.
+    Does NOT trigger a build — avoids Render deploy race condition.
+    To build: POST /api/jobs/admin/trigger-pipeline
     """
     def _init():
         global _index, _id_map
@@ -192,16 +190,12 @@ def load_or_build_index(app=None) -> None:
             result = _load_from_disk()
             if result and result[0].ntotal > 0:
                 _index, _id_map = result
+                logger.info("[FAISS] Index loaded from disk at startup: %d vectors.", _index.ntotal)
             else:
-                logger.info("[FAISS] No disk index — building from DB.")
-                try:
-                    if app:
-                        with app.app_context():
-                            _index, _id_map = _build_index_from_db()
-                    else:
-                        _index, _id_map = _build_index_from_db()
-                except Exception as e:
-                    logger.error("[FAISS] Startup build failed: %s", e)
+                logger.warning(
+                    "[FAISS] No disk index found at startup. "
+                    "POST /api/jobs/admin/trigger-pipeline to build."
+                )
 
     threading.Thread(target=_init, daemon=True, name="faiss-startup").start()
 
@@ -250,13 +244,13 @@ def search_jobs(query: str, k: int = 20) -> list[str]:
 
 
 def match_jobs_by_skills(skills: list[str], k: int = 10) -> list[dict]:
-    """Skill-based matching — returns list of {job_id, match_score} dicts."""
+    """Skill-based matching — returns list of {job_id, match_percentage} dicts."""
     if not skills:
         return []
     query = " ".join(skills)
     uuids = search_jobs(query, k=k)
     return [
-        {"job_id": uid, "match_score": max(100 - rank * 8, 20)}
+        {"job_id": uid, "match_percentage": max(100 - rank * 8, 20)}
         for rank, uid in enumerate(uuids)
     ]
 
@@ -265,10 +259,10 @@ def get_index_status() -> dict:
     """Admin diagnostic — returns current index state."""
     global _index, _id_map
     return {
-        "index_ready":      _index is not None and _index.ntotal > 0,
-        "vectors_total":    _index.ntotal if _index else 0,
-        "id_map_size":      len(_id_map),
-        "vector_dim":       VECTOR_DIM,
-        "embedding_model":  GEMINI_MODEL,
-        "index_on_disk":    os.path.exists(INDEX_PATH),
+        "index_ready":     _index is not None and _index.ntotal > 0,
+        "vectors_total":   _index.ntotal if _index else 0,
+        "id_map_size":     len(_id_map),
+        "vector_dim":      VECTOR_DIM,
+        "embedding_model": GEMINI_MODEL,
+        "index_on_disk":   os.path.exists(INDEX_PATH),
     }
