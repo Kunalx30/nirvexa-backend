@@ -7,9 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
-
-# Stored at module level so run_daily_job_pipeline can access it
-_app = None
+_app = None  # stored app reference for context
 
 
 def run_daily_job_pipeline():
@@ -42,10 +40,10 @@ def run_daily_job_pipeline():
 
     logger.info("=== Daily Job Pipeline Started ===")
     total_inserted = 0
-    total_skipped = 0
-    total_errors = 0
+    total_skipped  = 0
+    total_errors   = 0
 
-    # Step 1 — Scrape all sources in parallel (no DB, no app context needed)
+    # ── Step 1: Run all scrapers in parallel (no DB needed) ───────────────────
     all_jobs = {}
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
@@ -59,10 +57,10 @@ def run_daily_job_pipeline():
                 all_jobs[source] = jobs
                 logger.info(f"[{source}] scraped {len(jobs)} jobs")
             except Exception as e:
-                logger.error(f"[{source}] Scrape error: {e}")
+                logger.error(f"[{source}] Scraper error: {e}")
                 all_jobs[source] = []
 
-    # Step 2 — Insert all jobs inside app context
+    # ── Step 2: Insert all jobs inside app context ────────────────────────────
     with _app.app_context():
         for source, jobs in all_jobs.items():
             if not jobs:
@@ -87,22 +85,24 @@ def run_daily_job_pipeline():
         f"errors={total_errors} ==="
     )
 
-    # Step 3 — Rebuild FAISS index with newly inserted jobs
+    # ── Step 3: Rebuild FAISS index in background thread ─────────────────────
+    # Uses rebuild_index(app) which spawns its own thread — never blocks here
     logger.info("[Scheduler] Rebuilding FAISS semantic search index...")
     try:
         from app.services.rag_pipeline import rebuild_index
-        stats = rebuild_index(app=_app)
-        logger.info(f"[Scheduler] FAISS rebuild complete: {stats}")
+        result = rebuild_index(app=_app)
+        logger.info(f"[Scheduler] FAISS rebuild triggered: {result}")
     except Exception as e:
-        logger.error(f"[Scheduler] FAISS rebuild failed: {e}")
+        logger.error(f"[Scheduler] FAISS rebuild failed to start: {e}")
 
 
 def init_scheduler(app):
     """Call this from create_app() to start the scheduler."""
     global _app
-    _app = app  # store app reference for use in pipeline
+    _app = app
 
     with app.app_context():
+        # 2AM IST = 20:30 UTC
         scheduler.add_job(
             run_daily_job_pipeline,
             CronTrigger(hour=20, minute=30, timezone=pytz.utc),
