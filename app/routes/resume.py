@@ -131,7 +131,8 @@ def resume_history():
 def _call_gemini(pdf_b64: str, prompt: str) -> str:
     """Send PDF + prompt to Gemini 1.5 Flash, return raw text response."""
     url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GOOGLE_API_KEY}"
+        f"https://generativelanguage.googleapis.com/v1beta"
+    f"/models/gemini-2.0-flash:generateContent?key={GOOGLE_API_KEY}"
     )
 
     payload = {
