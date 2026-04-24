@@ -1,10 +1,10 @@
 """
 app/routes/resume.py
 NirVexa — Phase 5.8: Resume Analyzer
-POST /api/resume/analyze  — accepts PDF, runs Gemini analysis, returns JSON
+POST /api/resume/analyze  — accepts PDF, runs Groq analysis, returns JSON
 GET  /api/resume/history  — returns past analyses for logged-in user
 """
-import os, base64, json, logging, requests
+import os, json, logging, requests, io
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth_middleware import token_required
 from app.extensions import db
@@ -13,11 +13,9 @@ from app.models.resume_analysis import ResumeAnalysis
 resume_bp = Blueprint("resume", __name__, url_prefix="/api/resume")
 logger = logging.getLogger(__name__)
 
-GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
-
 ANALYSIS_PROMPT = """
 You are an expert ATS (Applicant Tracking System) and career coach.
-Analyze the resume in the attached PDF and return ONLY a valid JSON object — 
+Analyze the resume text below and return ONLY a valid JSON object —
 no markdown, no backticks, no explanation outside the JSON.
 
 Return exactly this structure:
@@ -54,32 +52,35 @@ def analyze_resume():
     if not file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files are supported"}), 400
 
-    # 2. Read + base64 encode
+    # 2. Read PDF
     pdf_bytes = file.read()
     if len(pdf_bytes) > 5 * 1024 * 1024:
         return jsonify({"error": "File too large. Max 5MB"}), 400
 
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+    # 3. Extract text from PDF
+    resume_text = _extract_text(pdf_bytes)
+    if not resume_text.strip():
+        return jsonify({"error": "Could not extract text from PDF. Make sure it is not a scanned image."}), 400
 
-    # 3. Call Gemini
+    # 4. Call Groq
     try:
-        result = _call_gemini(pdf_b64, ANALYSIS_PROMPT)
+        result = _call_groq(resume_text, ANALYSIS_PROMPT)
     except Exception as e:
-        logger.error(f"[Resume] Gemini call failed: {e}")
-        return jsonify({"error": "AI analysis failed. Please try again."}), 500
+        logger.error(f"[Resume] Groq call failed: {e}")
+        return jsonify({"error": "AI analysis failed. Please try again.", "detail": str(e)}), 500
 
-    # 4. Parse JSON from Gemini response
+    # 5. Parse JSON from Groq response
     try:
         clean = result.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[-2] if "```" in clean[3:] else clean
+        if "```" in clean:
+            clean = clean.split("```")[1]
             clean = clean.lstrip("json").strip()
         data = json.loads(clean)
     except Exception as e:
         logger.error(f"[Resume] JSON parse failed: {e}\nRaw: {result[:300]}")
         return jsonify({"error": "Could not parse AI response. Try again."}), 500
 
-    # 5. Save to DB
+    # 6. Save to DB
     analysis = None
     try:
         analysis = ResumeAnalysis(
@@ -107,7 +108,7 @@ def analyze_resume():
         "strengths":        data.get("strengths", []),
         "improvements":     data.get("improvements", []),
         "missing_keywords": data.get("missing_keywords", []),
-        "model_used":       "gemini-1.5-flash",
+        "model_used":       "groq/llama-3.3-70b-versatile",
     }), 200
 
 
@@ -128,26 +129,38 @@ def resume_history():
     } for a in analyses]), 200
 
 
-def _call_gemini(pdf_b64: str, prompt: str) -> str:
-    """Send PDF + prompt to Gemini 1.5 Flash, return raw text response."""
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta"
-    f"/models/gemini-2.0-flash:generateContent?key={GOOGLE_API_KEY}"
-    )
+def _extract_text(pdf_bytes: bytes) -> str:
+    """Extract plain text from PDF bytes using pdfplumber."""
+    import pdfplumber
+    text_parts = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text()
+            if t:
+                text_parts.append(t)
+    return "\n".join(text_parts)
+
+
+def _call_groq(resume_text: str, prompt: str) -> str:
+    """Send resume text to Groq Llama 3.3 70B, return raw response."""
+    GROQ_RESUME_API_KEY = os.environ.get("GROQ_RESUME_API_KEY")
+    url = "https://api.groq.com/openai/v1/chat/completions"
 
     payload = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}},
-                {"text": prompt}
-            ]
-        }],
-        "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 1024,
-        }
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user",   "content": f"Resume text:\n\n{resume_text}"}
+        ],
+        "temperature": 0.1,
+        "max_tokens": 1024,
     }
 
-    resp = requests.post(url, json=payload, timeout=60)
+    resp = requests.post(
+        url,
+        json=payload,
+        headers={"Authorization": f"Bearer {GROQ_RESUME_API_KEY}"},
+        timeout=60
+    )
     resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return resp.json()["choices"][0]["message"]["content"]
