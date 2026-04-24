@@ -215,6 +215,7 @@ def rebuild_index(app=None) -> dict:
         logger.info("[FAISS] Incremental update started...")
 
         def _do_update():
+            global _index, _id_map 
             result = _load_from_disk()
             if result and result[0].ntotal > 0:
                 new_index, new_id_map = _update_index_incremental(result[0], result[1])
