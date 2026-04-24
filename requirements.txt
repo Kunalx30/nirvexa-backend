@@ -168,3 +168,7 @@ pluggy==1.6.0
 pdfplumber==0.11.4
 
 flask-jwt-extended==4.7.1
+
+
+# for email
+resend==2.29.0
