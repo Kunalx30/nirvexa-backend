@@ -8,46 +8,44 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 
-_app = None
+_app = None   # stored at init time so the pipeline thread can use it
 
 
 def run_daily_job_pipeline():
     """
-    Runs all scrapers in parallel, inserts results to DB,
+    Runs all scrapers in parallel, inserts results to DB, 
     rebuilds FAISS index, and sends user alerts.
     Triggered daily at 2AM IST (20:30 UTC).
     """
     from app.services.job_scraper import (
         scrape_remotive,
+        scrape_github_jobs,
         scrape_internshala,
         scrape_greenhouse_companies,
         scrape_lever_companies,
         scrape_indian_startups_greenhouse,
         scrape_indian_startups_lever,
         scrape_jsearch_india,
-        scrape_freshersworld,
-        scrape_naukri_rss,
     )
     from app.services.job_inserter import insert_jobs
 
     scrapers = {
         'remotive':          scrape_remotive,
+        'arbeitnow':         scrape_github_jobs,
         'internshala':       scrape_internshala,
         'greenhouse_global': scrape_greenhouse_companies,
         'lever_global':      scrape_lever_companies,
         'greenhouse_india':  scrape_indian_startups_greenhouse,
         'lever_india':       scrape_indian_startups_lever,
         'jsearch':           scrape_jsearch_india,
-        'freshersworld':     scrape_freshersworld,
-        'naukri_rss':        scrape_naukri_rss,
     }
 
     logger.info("=== Daily Job Pipeline Started ===")
 
     # ── Step 1: Scrape all sources in parallel ────────────────────────────────
     all_jobs_by_source = {}
-    newly_fetched_jobs = []
-
+    newly_fetched_jobs = []  # To pass to the alert system
+    
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
             executor.submit(fn): source
@@ -119,7 +117,7 @@ def _send_job_alerts(new_jobs: list):
     from app.models.user import User
     from app.services.email_service import send_job_alert
     from datetime import datetime, timezone
-
+    
     if not _app:
         return
 
@@ -132,6 +130,7 @@ def _send_job_alerts(new_jobs: list):
             if not keywords:
                 continue
 
+            # Match jobs where any keyword appears in title or skills
             matched = []
             for job in new_jobs:
                 title = (job.get("title") or "").lower()
@@ -148,10 +147,12 @@ def _send_job_alerts(new_jobs: list):
             if not matched:
                 continue
 
+            # Get user email
             user = User.query.filter_by(id=alert.user_id).first()
             if not user or not user.email:
                 continue
 
+            # Send Email
             sent = send_job_alert(user.email, user.name, matched)
             if sent:
                 alert.last_sent_at = datetime.now(timezone.utc)
@@ -169,6 +170,7 @@ def init_scheduler(app):
     global _app
     _app = app
 
+    # 2AM IST = 20:30 UTC
     scheduler.add_job(
         run_daily_job_pipeline,
         CronTrigger(hour=20, minute=30, timezone=pytz.utc),
