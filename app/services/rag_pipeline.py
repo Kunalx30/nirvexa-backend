@@ -1,99 +1,99 @@
 """
 app/services/rag_pipeline.py
 NirVexa — Phase 5.6: FAISS Semantic Search
-Uses Google Gemini embedding API (free, zero memory cost on Render free tier)
-No sentence-transformers, no torch — works within 512MB RAM limit.
+Uses HuggingFace Inference API for embeddings — no daily quota limit.
 
-Gemini model: models/gemini-embedding-001
-Dimensions: 768
-Free tier: 100 requests/minute, 1500 requests/day
+Model: sentence-transformers/all-MiniLM-L6-v2
+Dimensions: 384
+Cost: Free (HuggingFace free tier)
+No sentence-transformers library needed — pure HTTP call.
 """
 
 import logging
 import os
-import re
 import threading
 import time
 import pickle
 import numpy as np
+import requests
 
 import faiss
-import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-GEMINI_MODEL   = "models/gemini-embedding-001"
-VECTOR_DIM     = 768
+HF_MODEL       = "sentence-transformers/all-MiniLM-L6-v2"
+HF_API_URL     = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{HF_MODEL}"
+VECTOR_DIM     = 384
 INDEX_PATH     = "nirvexa_jobs.index"
 IDMAP_PATH     = "nirvexa_jobs_idmap.pkl"
-BATCH_SIZE     = 50     # 50 texts per call (Gemini max)
-BATCH_DELAY    = 1.0    # seconds between successful batches
-MAX_RETRIES    = 5      # retries per batch on 429
-DEFAULT_RETRY  = 65     # seconds to wait on 429 if no retry_delay in error
+BATCH_SIZE     = 64     # HF handles up to 64 texts per call fine
+BATCH_DELAY    = 0.5    # small delay between batches
+MAX_RETRIES    = 4
 
 # ─── Globals ───────────────────────────────────────────────────────────────────
 _index:  faiss.Index | None = None
-_id_map: list[str]          = []    # position → job UUID
+_id_map: list[str]          = []
 _lock    = threading.Lock()
 
-# ─── Gemini setup ──────────────────────────────────────────────────────────────
-def _configure_gemini():
-    api_key = (
-        os.environ.get("GOOGLE_API_KEY")
-        or os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("GOOGLE_AI_KEY")
-    )
+
+# ─── HuggingFace embed ─────────────────────────────────────────────────────────
+def _get_hf_headers():
+    api_key = os.environ.get("HF_API_KEY") or os.environ.get("HUGGINGFACE_API_KEY")
     if not api_key:
-        raise RuntimeError("No Gemini API key found. Set GOOGLE_API_KEY in .env")
-    genai.configure(api_key=api_key)
+        raise RuntimeError("No HuggingFace API key found. Set HF_API_KEY in .env")
+    return {"Authorization": f"Bearer {api_key}"}
 
 
-def _parse_retry_delay(error_str: str) -> int:
-    """Extract retry delay seconds from Gemini 429 error message."""
-    match = re.search(r'retry[_\s]in\s+([\d.]+)s', str(error_str), re.IGNORECASE)
-    if match:
-        return int(float(match.group(1))) + 5   # +5s buffer
-    return DEFAULT_RETRY
-
-
-# ─── Embed helpers ─────────────────────────────────────────────────────────────
 def _embed_batch_with_retry(batch: list[str], batch_start: int) -> list:
-    """
-    Embed one batch with retry on 429.
-    Returns list of embedding vectors (length = len(batch)).
-    Falls back to zero vectors only after MAX_RETRIES exhausted.
-    """
+    """Embed one batch via HuggingFace API with retry on 503 (model loading)."""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            result = genai.embed_content(
-                model=GEMINI_MODEL,
-                content=batch,
-                task_type="RETRIEVAL_DOCUMENT",
+            response = requests.post(
+                HF_API_URL,
+                headers=_get_hf_headers(),
+                json={"inputs": batch, "options": {"wait_for_model": True}},
+                timeout=60,
             )
-            logger.info("[FAISS] Embedded batch %d-%d", batch_start, batch_start + len(batch))
-            return result["embedding"]
+            if response.status_code == 200:
+                embeddings = response.json()
+                # HF returns (N, 384) list — mean pool if nested
+                result = []
+                for emb in embeddings:
+                    if isinstance(emb[0], list):
+                        # token-level embeddings — mean pool
+                        arr = np.array(emb, dtype="float32")
+                        result.append(arr.mean(axis=0).tolist())
+                    else:
+                        result.append(emb)
+                logger.info("[FAISS] Embedded batch %d-%d", batch_start, batch_start + len(batch))
+                return result
+
+            elif response.status_code == 503:
+                # Model still loading — wait and retry
+                wait = 20 * attempt
+                logger.warning("[FAISS] HF model loading (attempt %d/%d) — sleeping %ds", attempt, MAX_RETRIES, wait)
+                time.sleep(wait)
+
+            elif response.status_code == 429:
+                logger.warning("[FAISS] HF rate limit (attempt %d/%d) — sleeping 30s", attempt, MAX_RETRIES)
+                time.sleep(30)
+
+            else:
+                logger.error("[FAISS] HF API error %d: %s", response.status_code, response.text[:200])
+                break
 
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower():
-                wait = _parse_retry_delay(err_str)
-                logger.warning(
-                    "[FAISS] 429 on batch %d (attempt %d/%d) — sleeping %ds",
-                    batch_start, attempt, MAX_RETRIES, wait
-                )
-                time.sleep(wait)
-            else:
-                logger.error("[FAISS] Embed batch %d failed (non-429): %s", batch_start, e)
-                break
+            logger.error("[FAISS] Batch %d request failed: %s", batch_start, e)
+            if attempt < MAX_RETRIES:
+                time.sleep(10)
 
     logger.error("[FAISS] Batch %d: all retries failed, using zero vectors", batch_start)
     return [[0.0] * VECTOR_DIM for _ in batch]
 
 
 def _embed_texts(texts: list[str]) -> np.ndarray:
-    """Embed a list of strings via Gemini. Returns float32 ndarray (N, 768)."""
-    _configure_gemini()
+    """Embed a list of strings. Returns float32 ndarray (N, 384)."""
     vectors = []
     for i in range(0, len(texts), BATCH_SIZE):
         batch = texts[i: i + BATCH_SIZE]
@@ -105,25 +105,9 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
 
 
 def _embed_query(query: str) -> np.ndarray:
-    """Embed a single search query string, with 429 retry."""
-    _configure_gemini()
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            result = genai.embed_content(
-                model=GEMINI_MODEL,
-                content=query,
-                task_type="RETRIEVAL_QUERY",
-            )
-            return np.array([result["embedding"]], dtype="float32")
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower():
-                wait = _parse_retry_delay(err_str)
-                logger.warning("[FAISS] Query embed 429 (attempt %d/%d) — sleeping %ds", attempt, MAX_RETRIES, wait)
-                time.sleep(wait)
-            else:
-                raise
-    raise RuntimeError("[FAISS] Query embed failed after all retries")
+    """Embed a single query string."""
+    result = _embed_batch_with_retry([query], 0)
+    return np.array([result[0]], dtype="float32")
 
 
 # ─── Disk persistence ──────────────────────────────────────────────────────────
@@ -131,7 +115,7 @@ def _save_to_disk(index: faiss.Index, id_map: list[str]):
     faiss.write_index(index, INDEX_PATH)
     with open(IDMAP_PATH, "wb") as f:
         pickle.dump(id_map, f)
-    logger.info("[FAISS] Saved to disk.")
+    logger.info("[FAISS] Saved to disk (%d vectors).", index.ntotal)
 
 
 def _load_from_disk():
@@ -147,31 +131,58 @@ def _load_from_disk():
     return None
 
 
-# ─── Build index from DB ───────────────────────────────────────────────────────
-def _build_index_from_db():
-    """Query DB and build a fresh FAISS index. Must be called inside app context."""
+# ─── Incremental index update ──────────────────────────────────────────────────
+def _update_index_incremental(existing_index, existing_id_map: list[str]):
+    """Only embeds jobs NOT already in existing_id_map. Appends to index."""
     from app.models.job import Job
 
-    logger.info("[FAISS] Fetching active jobs from DB...")
+    all_jobs     = Job.query.filter_by(is_active=True).all()
+    existing_set = set(existing_id_map)
+    new_jobs     = [j for j in all_jobs if str(j.id) not in existing_set]
+
+    if not new_jobs:
+        logger.info("[FAISS] No new jobs to embed — index up to date (%d vectors).", existing_index.ntotal)
+        return existing_index, existing_id_map
+
+    logger.info("[FAISS] Embedding %d new jobs (skipping %d already indexed).", len(new_jobs), len(existing_id_map))
+
+    texts = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in new_jobs]
+    uuids = [str(j.id) for j in new_jobs]
+    vecs  = _embed_texts(texts)
+
+    if vecs.shape != (len(new_jobs), VECTOR_DIM):
+        raise ValueError(f"[FAISS] Shape mismatch: got {vecs.shape}, expected ({len(new_jobs)}, {VECTOR_DIM})")
+
+    existing_index.add(vecs)
+    updated_id_map = existing_id_map + uuids
+
+    logger.info("[FAISS] Index updated: %d total vectors.", existing_index.ntotal)
+    _save_to_disk(existing_index, updated_id_map)
+    return existing_index, updated_id_map
+
+
+def _build_fresh_index():
+    """Full build from scratch — used when no disk index exists."""
+    from app.models.job import Job
+
+    logger.info("[FAISS] Fresh build — fetching all active jobs...")
     jobs = Job.query.filter_by(is_active=True).all()
 
     if not jobs:
-        logger.warning("[FAISS] No active jobs — building empty index.")
+        logger.warning("[FAISS] No active jobs — empty index.")
         return faiss.IndexFlatL2(VECTOR_DIM), []
 
-    logger.info("[FAISS] Embedding %d jobs via Gemini...", len(jobs))
+    logger.info("[FAISS] Embedding all %d jobs via HuggingFace...", len(jobs))
     texts = [f"{j.title} {j.company} {' '.join(j.skills or [])}" for j in jobs]
     uuids = [str(j.id) for j in jobs]
+    vecs  = _embed_texts(texts)
 
-    vecs = _embed_texts(texts)
-
-    logger.info("[FAISS] vecs shape: %s dtype: %s", vecs.shape, vecs.dtype)
     if vecs.shape != (len(jobs), VECTOR_DIM):
         raise ValueError(f"[FAISS] Shape mismatch: got {vecs.shape}, expected ({len(jobs)}, {VECTOR_DIM})")
 
     index = faiss.IndexFlatL2(VECTOR_DIM)
     index.add(vecs)
-    logger.info("[FAISS] Index built: %d vectors.", index.ntotal)
+    logger.info("[FAISS] Fresh index built: %d vectors.", index.ntotal)
 
     _save_to_disk(index, uuids)
     return index, uuids
@@ -179,59 +190,60 @@ def _build_index_from_db():
 
 # ─── Public API ────────────────────────────────────────────────────────────────
 def load_or_build_index(app=None) -> None:
-    """
-    Called at app startup — tries disk load ONLY.
-    Does NOT trigger a build — avoids Render deploy race condition.
-    To build: POST /api/jobs/admin/trigger-pipeline
-    """
+    """Startup — load from disk only. No build to avoid deploy race."""
     def _init():
         global _index, _id_map
         with _lock:
             result = _load_from_disk()
             if result and result[0].ntotal > 0:
                 _index, _id_map = result
-                logger.info("[FAISS] Index loaded from disk at startup: %d vectors.", _index.ntotal)
+                logger.info("[FAISS] Loaded at startup: %d vectors.", _index.ntotal)
             else:
-                logger.warning(
-                    "[FAISS] No disk index found at startup. "
-                    "POST /api/jobs/admin/trigger-pipeline to build."
-                )
+                logger.warning("[FAISS] No disk index. Trigger pipeline to build.")
 
     threading.Thread(target=_init, daemon=True, name="faiss-startup").start()
 
 
 def rebuild_index(app=None) -> dict:
     """
-    Rebuild FAISS index from scratch — called from scheduler after scrape.
-    Runs in background thread — never blocks gunicorn workers.
-    Returns immediately.
+    Incremental update — only embeds new jobs.
+    Called from scheduler after daily scrape.
+    Returns immediately, runs in background thread.
     """
     def _rebuild():
         global _index, _id_map
-        logger.info("[FAISS] Background rebuild started...")
-        try:
-            if app:
-                with app.app_context():
-                    new_index, new_id_map = _build_index_from_db()
+        logger.info("[FAISS] Incremental update started...")
+
+        def _do_update():
+            result = _load_from_disk()
+            if result and result[0].ntotal > 0:
+                new_index, new_id_map = _update_index_incremental(result[0], result[1])
             else:
-                new_index, new_id_map = _build_index_from_db()
+                new_index, new_id_map = _build_fresh_index()
 
             with _lock:
                 _index  = new_index
                 _id_map = new_id_map
-            logger.info("[FAISS] Background rebuild complete: %d vectors.", new_index.ntotal)
+            logger.info("[FAISS] Update complete: %d vectors.", new_index.ntotal)
+
+        try:
+            if app:
+                with app.app_context():
+                    _do_update()
+            else:
+                _do_update()
         except Exception as e:
-            logger.error("[FAISS] Background rebuild failed: %s", e)
+            logger.error("[FAISS] Update failed: %s", e)
 
     threading.Thread(target=_rebuild, daemon=True, name="faiss-rebuild").start()
-    return {"status": "rebuild started in background"}
+    return {"status": "incremental update started in background"}
 
 
 def search_jobs(query: str, k: int = 20) -> list[str]:
     """Semantic search — returns list of job UUIDs ranked by similarity."""
     global _index, _id_map
     if _index is None or _index.ntotal == 0:
-        logger.warning("[FAISS] Index not ready — returning empty results.")
+        logger.warning("[FAISS] Index not ready.")
         return []
     try:
         vec = _embed_query(query)
@@ -244,7 +256,7 @@ def search_jobs(query: str, k: int = 20) -> list[str]:
 
 
 def match_jobs_by_skills(skills: list[str], k: int = 10) -> list[dict]:
-    """Skill-based matching — returns list of {job_id, match_percentage} dicts."""
+    """Skill-based matching — returns {job_id, match_percentage} dicts."""
     if not skills:
         return []
     query = " ".join(skills)
@@ -256,13 +268,12 @@ def match_jobs_by_skills(skills: list[str], k: int = 10) -> list[dict]:
 
 
 def get_index_status() -> dict:
-    """Admin diagnostic — returns current index state."""
     global _index, _id_map
     return {
         "index_ready":     _index is not None and _index.ntotal > 0,
         "vectors_total":   _index.ntotal if _index else 0,
         "id_map_size":     len(_id_map),
         "vector_dim":      VECTOR_DIM,
-        "embedding_model": GEMINI_MODEL,
+        "embedding_model": HF_MODEL,
         "index_on_disk":   os.path.exists(INDEX_PATH),
     }
