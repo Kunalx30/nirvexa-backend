@@ -4,9 +4,9 @@ NirVexa — Phase 5.8: Resume Analyzer
 POST /api/resume/analyze  — accepts PDF, runs Gemini analysis, returns JSON
 GET  /api/resume/history  — returns past analyses for logged-in user
 """
-import os, base64, json, logging
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+import os, base64, json, logging, requests
+from flask import Blueprint, request, jsonify, g
+from app.middleware.auth_middleware import token_required
 from app.extensions import db
 from app.models.resume_analysis import ResumeAnalysis
 
@@ -41,9 +41,9 @@ Be specific. missing_keywords should be real tech/role keywords not in the resum
 
 
 @resume_bp.route("/analyze", methods=["POST"])
-@jwt_required()
+@token_required
 def analyze_resume():
-    user_id = get_jwt_identity()
+    user_id = g.user_id
 
     # 1. Validate file
     if "file" not in request.files:
@@ -53,9 +53,6 @@ def analyze_resume():
 
     if not file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files are supported"}), 400
-
-    if file.content_length and file.content_length > 5 * 1024 * 1024:
-        return jsonify({"error": "File too large. Max 5MB"}), 400
 
     # 2. Read + base64 encode
     pdf_bytes = file.read()
@@ -73,14 +70,17 @@ def analyze_resume():
 
     # 4. Parse JSON from Gemini response
     try:
-        # Strip accidental markdown fences
-        clean = result.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        clean = result.strip()
+        if clean.startswith("```"):
+            clean = clean.split("```")[-2] if "```" in clean[3:] else clean
+            clean = clean.lstrip("json").strip()
         data = json.loads(clean)
     except Exception as e:
         logger.error(f"[Resume] JSON parse failed: {e}\nRaw: {result[:300]}")
         return jsonify({"error": "Could not parse AI response. Try again."}), 500
 
     # 5. Save to DB
+    analysis = None
     try:
         analysis = ResumeAnalysis(
             user_id          = user_id,
@@ -98,55 +98,48 @@ def analyze_resume():
     except Exception as e:
         db.session.rollback()
         logger.error(f"[Resume] DB save failed: {e}")
-        # Still return result even if DB save fails
 
     return jsonify({
-        "analysis_id":       str(analysis.id) if analysis.id else None,
-        "overall_score":     data.get("overall_score"),
-        "ats_status":        data.get("ats_status"),
-        "skills_found":      data.get("skills_found", []),
-        "strengths":         data.get("strengths", []),
-        "improvements":      data.get("improvements", []),
-        "missing_keywords":  data.get("missing_keywords", []),
-        "model_used":        "gemini-1.5-flash",
+        "analysis_id":      str(analysis.id) if analysis and analysis.id else None,
+        "overall_score":    data.get("overall_score"),
+        "ats_status":       data.get("ats_status"),
+        "skills_found":     data.get("skills_found", []),
+        "strengths":        data.get("strengths", []),
+        "improvements":     data.get("improvements", []),
+        "missing_keywords": data.get("missing_keywords", []),
+        "model_used":       "gemini-1.5-flash",
     }), 200
 
 
 @resume_bp.route("/history", methods=["GET"])
-@jwt_required()
+@token_required
 def resume_history():
-    user_id = get_jwt_identity()
+    user_id = g.user_id
     analyses = ResumeAnalysis.query.filter_by(user_id=user_id)\
                   .order_by(ResumeAnalysis.created_at.desc())\
                   .limit(10).all()
 
     return jsonify([{
-        "id":            str(a.id),
-        "filename":      a.filename,
-        "score":         a.score,
-        "ats_status":    a.ats_status,
-        "created_at":    a.created_at.isoformat(),
+        "id":         str(a.id),
+        "filename":   a.filename,
+        "score":      a.score,
+        "ats_status": a.ats_status,
+        "created_at": a.created_at.isoformat(),
     } for a in analyses]), 200
 
 
 def _call_gemini(pdf_b64: str, prompt: str) -> str:
     """Send PDF + prompt to Gemini 1.5 Flash, return raw text response."""
-    import requests
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta"
+        f"/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    )
 
     payload = {
         "contents": [{
             "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "application/pdf",
-                        "data": pdf_b64
-                    }
-                },
-                {
-                    "text": prompt
-                }
+                {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}},
+                {"text": prompt}
             ]
         }],
         "generationConfig": {
@@ -157,6 +150,4 @@ def _call_gemini(pdf_b64: str, prompt: str) -> str:
 
     resp = requests.post(url, json=payload, timeout=60)
     resp.raise_for_status()
-
-    body = resp.json()
-    return body["candidates"][0]["content"]["parts"][0]["text"]
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
