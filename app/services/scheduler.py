@@ -13,7 +13,8 @@ _app = None   # stored at init time so the pipeline thread can use it
 
 def run_daily_job_pipeline():
     """
-    Runs all scrapers in parallel, inserts results to DB.
+    Runs all scrapers in parallel, inserts results to DB, 
+    rebuilds FAISS index, and sends user alerts.
     Triggered daily at 2AM IST (20:30 UTC).
     """
     from app.services.job_scraper import (
@@ -41,8 +42,10 @@ def run_daily_job_pipeline():
 
     logger.info("=== Daily Job Pipeline Started ===")
 
-    # ── Step 1: Scrape all sources in parallel (no DB, no context needed) ──────
+    # ── Step 1: Scrape all sources in parallel ────────────────────────────────
     all_jobs_by_source = {}
+    newly_fetched_jobs = []  # To pass to the alert system
+    
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
             executor.submit(fn): source
@@ -53,6 +56,7 @@ def run_daily_job_pipeline():
             try:
                 jobs = future.result()
                 all_jobs_by_source[source] = jobs
+                newly_fetched_jobs.extend(jobs)
                 logger.info("[%s] scraped %d jobs", source, len(jobs))
             except Exception as e:
                 logger.error("[%s] Scraper error: %s", source, e)
@@ -87,17 +91,78 @@ def run_daily_job_pipeline():
             ctx.pop()
 
     logger.info(
-        "=== Pipeline Done | inserted=%d skipped=%d errors=%d ===",
+        "=== Pipeline DB Sync Done | inserted=%d skipped=%d errors=%d ===",
         total_inserted, total_skipped, total_errors
     )
 
-    # ── Step 3: Rebuild FAISS index in background (non-blocking) ─────────────
+    # ── Step 3: Rebuild FAISS index in background ─────────────────────────────
     logger.info("[Scheduler] Triggering FAISS rebuild in background...")
     try:
         from app.services.rag_pipeline import rebuild_index
-        rebuild_index(app=_app)   # returns immediately — runs in its own thread
+        rebuild_index(app=_app)
     except Exception as e:
         logger.error("[Scheduler] FAISS rebuild trigger failed: %s", e)
+
+    # ── Step 4: Send Job Alerts ───────────────────────────────────────────────
+    if total_inserted > 0:
+        logger.info("[Scheduler] New jobs found. Processing alerts...")
+        _send_job_alerts(newly_fetched_jobs)
+    else:
+        logger.info("[Scheduler] No new jobs inserted. Skipping alerts.")
+
+
+def _send_job_alerts(new_jobs: list):
+    """Match new jobs against user alerts and send emails."""
+    from app.models.job_alert import JobAlert
+    from app.models.user import User
+    from app.services.email_service import send_job_alert
+    from datetime import datetime, timezone
+    
+    if not _app:
+        return
+
+    with _app.app_context():
+        alerts = JobAlert.query.filter_by(is_active=True).all()
+        logger.info(f"[Alerts] Checking {len(alerts)} active alerts against {len(new_jobs)} new jobs")
+
+        for alert in alerts:
+            keywords = alert.keywords_list()
+            if not keywords:
+                continue
+
+            # Match jobs where any keyword appears in title or skills
+            matched = []
+            for job in new_jobs:
+                title = (job.get("title") or "").lower()
+                skills = " ".join(job.get("skills") or []).lower()
+                location = (job.get("location") or "").lower()
+                alert_location = (alert.location or "").lower()
+
+                keyword_match = any(kw in title or kw in skills for kw in keywords)
+                location_match = not alert_location or alert_location in location
+
+                if keyword_match and location_match:
+                    matched.append(job)
+
+            if not matched:
+                continue
+
+            # Get user email
+            user = User.query.filter_by(id=alert.user_id).first()
+            if not user or not user.email:
+                continue
+
+            # Send Email
+            sent = send_job_alert(user.email, user.name, matched)
+            if sent:
+                alert.last_sent_at = datetime.now(timezone.utc)
+
+        try:
+            from app.database.db import db
+            db.session.commit()
+            logger.info("[Alerts] Alerts processed and timestamps updated.")
+        except Exception as e:
+            logger.error(f"[Alerts] DB commit failed: {e}")
 
 
 def init_scheduler(app):
@@ -105,14 +170,13 @@ def init_scheduler(app):
     global _app
     _app = app
 
-    with app.app_context():
-        # 2AM IST = 20:30 UTC
-        scheduler.add_job(
-            run_daily_job_pipeline,
-            CronTrigger(hour=20, minute=30, timezone=pytz.utc),
-            id='daily_job_pipeline',
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
-        scheduler.start()
-        logger.info("APScheduler started — daily pipeline at 2AM IST")
+    # 2AM IST = 20:30 UTC
+    scheduler.add_job(
+        run_daily_job_pipeline,
+        CronTrigger(hour=20, minute=30, timezone=pytz.utc),
+        id='daily_job_pipeline',
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.start()
+    logger.info("APScheduler started — daily pipeline at 2AM IST")
