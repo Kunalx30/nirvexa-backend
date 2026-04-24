@@ -10,7 +10,6 @@ Endpoints:
   GET  /api/jobs/salary-insights      — salary stats for a role+location
   GET  /api/jobs/admin/faiss-status   — FAISS index diagnostic
   POST /api/jobs/admin/trigger-pipeline — manual scraper trigger
-  POST /api/jobs/admin/run-migrations — one-time migration fix (remove after use)
 """
 
 import logging
@@ -473,47 +472,4 @@ def trigger_pipeline():
         t.start()
         return jsonify({"message": "Pipeline triggered in background"}), 202
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ══════════════════════════════════════════════════════════════════
-# ── ONE-TIME COLUMN FIX — remove this route after running once ────
-# POST /api/jobs/admin/fix-alerts-column
-# Fixes: column job_alerts.is_active does not exist on Render prod DB
-# Uses raw SQL — safe on free tier, no shell needed
-# ══════════════════════════════════════════════════════════════════
-
-@jobs_bp.route("/admin/fix-alerts-column", methods=["POST"])
-def fix_alerts_column():
-    if not _check_admin(request):
-        return jsonify({"error": "Unauthorized"}), 401
-    try:
-        db.session.execute(db.text(
-            "ALTER TABLE job_alerts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"
-        ))
-        db.session.commit()
-        return jsonify({"success": True, "message": "is_active column added to job_alerts"}), 200
-    except Exception as e:
-        db.session.rollback()
-        logger.error("[FixColumn] Failed: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-# ══════════════════════════════════════════════════════════════════
-# ── ONE-TIME MIGRATION FIX — remove this route after running once ──
-# POST /api/jobs/admin/run-migrations
-# Fixes: column job_alerts.is_active does not exist on Render prod DB
-# ══════════════════════════════════════════════════════════════════
-
-@jobs_bp.route("/admin/run-migrations", methods=["POST"])
-def run_migrations():
-    if not _check_admin(request):
-        return jsonify({"error": "Unauthorized"}), 401
-
-    from flask_migrate import upgrade
-    try:
-        upgrade()
-        return jsonify({"success": True, "message": "Migrations ran successfully"}), 200
-    except Exception as e:
-        logger.error("[Migrations] Failed: %s", e)
         return jsonify({"error": str(e)}), 500
