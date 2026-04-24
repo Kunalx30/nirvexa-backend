@@ -13,7 +13,7 @@ from app.models.resume_analysis import ResumeAnalysis
 resume_bp = Blueprint("resume", __name__, url_prefix="/api/resume")
 logger = logging.getLogger(__name__)
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 ANALYSIS_PROMPT = """
 You are an expert ATS (Applicant Tracking System) and career coach.
