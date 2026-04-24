@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 HF_MODEL       = "sentence-transformers/all-MiniLM-L6-v2"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
 VECTOR_DIM     = 384
 INDEX_PATH     = "nirvexa_jobs.index"
 IDMAP_PATH     = "nirvexa_jobs_idmap.pkl"
