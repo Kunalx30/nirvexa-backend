@@ -439,14 +439,14 @@ def faiss_status():
 
 @jobs_bp.route("/admin/rebuild-index", methods=["POST"])
 def admin_rebuild_index():
-    """Manually trigger FAISS index rebuild (e.g. after bulk insert)."""
     secret = request.headers.get("X-Admin-Secret", "")
     import os
     if secret != os.environ.get("ADMIN_SECRET", "nirvexa-dev"):
         return jsonify({"error": "Unauthorized"}), 401
 
-    stats = rebuild_index()
-    return jsonify(stats), 200
+    from app.services.rag_pipeline import load_index_from_disk
+    result = load_index_from_disk()
+    return jsonify(result), 200
 
 
 @jobs_bp.route("/admin/trigger-pipeline", methods=["POST"])
@@ -465,3 +465,10 @@ def trigger_pipeline():
         return jsonify({"message": "Pipeline triggered in background"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+
+@jobs_bp.route('/admin/build-faiss', methods=['POST'])
+def build_faiss():
+    from app.services.rag_pipeline import rebuild_index
+    rebuild_index(app=current_app._get_current_object())
+    return jsonify({"status": "FAISS rebuild started"}), 202

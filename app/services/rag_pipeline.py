@@ -277,3 +277,17 @@ def get_index_status() -> dict:
         "embedding_model": HF_MODEL,
         "index_on_disk":   os.path.exists(INDEX_PATH),
     }
+
+
+def load_index_from_disk() -> dict:
+    """Load existing disk index into memory without rebuilding."""
+    global _index, _id_map
+    with _lock:
+        result = _load_from_disk()
+        if result and result[0].ntotal > 0:
+            _index  = result[0]
+            _id_map = result[1]
+            logger.info("[FAISS] Loaded from disk: %d vectors.", _index.ntotal)
+            return {"status": "loaded", "vectors": _index.ntotal}
+        else:
+            return {"status": "no disk index found"}
