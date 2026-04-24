@@ -165,4 +165,4 @@ iniconfig==2.3.0
 pluggy==1.6.0
 
 
-flask-jwt-extended-4.7.1
+flask-jwt-extended==4.7.1
