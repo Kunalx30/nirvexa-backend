@@ -31,6 +31,7 @@ def create_app(env: str = None) -> Flask:
         from app.models.job import Job          # noqa
         from app.models.saved_job import SavedJob   # noqa
         from app.models.job_alert import JobAlert   # noqa
+        from app.models.resume_analysis import ResumeAnalysis # noqa
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
@@ -93,6 +94,10 @@ def _register_blueprints(app: Flask):
     # Jobs Routes
     from app.routes.jobs import jobs_bp
     app.register_blueprint(jobs_bp, url_prefix="/api/jobs")
+
+    # Resume Analysis Routes
+    from app.routes.resume import resume_bp
+    app.register_blueprint(resume_bp)
 
 
 def _register_error_handlers(app: Flask):
