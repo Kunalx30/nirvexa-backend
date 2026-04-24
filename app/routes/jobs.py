@@ -10,12 +10,15 @@ Endpoints:
   GET  /api/jobs/salary-insights      — salary stats for a role+location
   GET  /api/jobs/admin/faiss-status   — FAISS index diagnostic
   POST /api/jobs/admin/trigger-pipeline — manual scraper trigger
+  POST /api/jobs/admin/run-migrations — one-time migration fix (remove after use)
 """
 
 import logging
+import os
+import re
 from datetime import datetime, timedelta
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy import or_, func
 
 from app.extensions import db
@@ -68,12 +71,10 @@ def _generate_ai_summary(job: Job) -> str | None:
         return job.ai_summary  # already cached
 
     try:
-        import os, requests as req
         api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
             return None
 
-        # Use your existing LLM router if available
         from app.services.llm_router import get_llm_response
 
         prompt = (
@@ -109,6 +110,8 @@ def get_jobs():
     page      = max(1, int(request.args.get("page", 1)))
     limit     = min(50, max(1, int(request.args.get("limit", 20))))
     offset    = (page - 1) * limit
+
+    faiss_ids = []
 
     # ── Semantic search path (q= present) ──────────────────────────
     if q:
@@ -157,11 +160,11 @@ def get_jobs():
     jobs  = base_query.offset(offset).limit(limit).all()
 
     return jsonify({
-        "jobs":       [_serialize_job(j) for j in jobs],
-        "total":      total,
-        "page":       page,
-        "limit":      limit,
-        "pages":      (total + limit - 1) // limit,
+        "jobs":        [_serialize_job(j) for j in jobs],
+        "total":       total,
+        "page":        page,
+        "limit":       limit,
+        "pages":       (total + limit - 1) // limit,
         "search_mode": "semantic" if (q and faiss_ids) else ("sql_fallback" if q else "browse"),
     }), 200
 
@@ -255,7 +258,6 @@ def salary_insights():
         if not job.salary:
             continue
         # Extract numbers from strings like "₹4L–₹8L", "4,00,000 - 8,00,000", "40000"
-        import re
         nums = re.findall(r"[\d,]+", job.salary.replace("L", "00000").replace("K", "000"))
         nums = [int(n.replace(",", "")) for n in nums if n.replace(",", "").isdigit()]
         if nums:
@@ -402,10 +404,10 @@ def get_alerts(current_user):
     return jsonify({
         "alerts": [
             {
-                "id":          str(a.id),
-                "keywords":    a.keywords,
-                "location":    a.location,
-                "frequency":   a.frequency,
+                "id":           str(a.id),
+                "keywords":     a.keywords,
+                "location":     a.location,
+                "frequency":    a.frequency,
                 "last_sent_at": a.last_sent_at.isoformat() if a.last_sent_at else None,
             }
             for a in alerts
@@ -426,22 +428,22 @@ def delete_alert(current_user, alert_id):
 # ── Admin / Dev Endpoints ──────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════
 
+def _check_admin(req) -> bool:
+    secret = req.headers.get("X-Admin-Secret", "")
+    return secret == os.environ.get("ADMIN_SECRET", "nirvexa-dev")
+
+
 @jobs_bp.route("/admin/faiss-status", methods=["GET"])
 def faiss_status():
     """Diagnostic endpoint — check FAISS index health."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    import os
-    if secret != os.environ.get("ADMIN_SECRET", "nirvexa-dev"):
+    if not _check_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
-
     return jsonify(get_index_status()), 200
 
 
 @jobs_bp.route("/admin/rebuild-index", methods=["POST"])
 def admin_rebuild_index():
-    secret = request.headers.get("X-Admin-Secret", "")
-    import os
-    if secret != os.environ.get("ADMIN_SECRET", "nirvexa-dev"):
+    if not _check_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     from app.services.rag_pipeline import load_index_from_disk
@@ -449,12 +451,19 @@ def admin_rebuild_index():
     return jsonify(result), 200
 
 
+@jobs_bp.route("/admin/build-faiss", methods=["POST"])
+def build_faiss():
+    if not _check_admin(request):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    rebuild_index(app=current_app._get_current_object())
+    return jsonify({"status": "FAISS rebuild started"}), 202
+
+
 @jobs_bp.route("/admin/trigger-pipeline", methods=["POST"])
 def trigger_pipeline():
     """Manually trigger the full scraper pipeline (dev/prod testing)."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    import os
-    if secret != os.environ.get("ADMIN_SECRET", "nirvexa-dev"):
+    if not _check_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -465,10 +474,23 @@ def trigger_pipeline():
         return jsonify({"message": "Pipeline triggered in background"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
 
-@jobs_bp.route('/admin/build-faiss', methods=['POST'])
-def build_faiss():
-    from app.services.rag_pipeline import rebuild_index
-    rebuild_index(app=current_app._get_current_object())
-    return jsonify({"status": "FAISS rebuild started"}), 202
+
+# ══════════════════════════════════════════════════════════════════
+# ── ONE-TIME MIGRATION FIX — remove this route after running once ──
+# POST /api/jobs/admin/run-migrations
+# Fixes: column job_alerts.is_active does not exist on Render prod DB
+# ══════════════════════════════════════════════════════════════════
+
+@jobs_bp.route("/admin/run-migrations", methods=["POST"])
+def run_migrations():
+    if not _check_admin(request):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from flask_migrate import upgrade
+    try:
+        upgrade()
+        return jsonify({"success": True, "message": "Migrations ran successfully"}), 200
+    except Exception as e:
+        logger.error("[Migrations] Failed: %s", e)
+        return jsonify({"error": str(e)}), 500
