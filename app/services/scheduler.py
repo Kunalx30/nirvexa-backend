@@ -29,9 +29,10 @@ def run_daily_job_pipeline():
     )
     from app.services.job_inserter import insert_jobs
 
+    # Removed Arbeitnow due to 403 Forbidden errors
     scrapers = {
         'remotive':          scrape_remotive,
-        'arbeitnow':         scrape_github_jobs,
+        'github_jobs':       scrape_github_jobs,
         'internshala':       scrape_internshala,
         'greenhouse_global': scrape_greenhouse_companies,
         'lever_global':      scrape_lever_companies,
