@@ -99,6 +99,10 @@ def _register_blueprints(app: Flask):
     from app.routes.resume import resume_bp
     app.register_blueprint(resume_bp)
 
+    # saved jobs 
+    from app.routes.user import user_bp
+    app.register_blueprint(user_bp)
+
 
 def _register_error_handlers(app: Flask):
     @app.errorhandler(400)
