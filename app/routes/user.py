@@ -3,7 +3,7 @@ app/routes/user.py
 NirVexa — User endpoints including saved jobs at /api/user/saved-jobs
 """
 import logging
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from app.extensions import db
 from app.models.job import Job
 from app.models.saved_job import SavedJob
@@ -16,8 +16,9 @@ user_bp = Blueprint("user", __name__, url_prefix="/api/user")
 
 @user_bp.route("/saved-jobs", methods=["GET"])
 @token_required
-def get_saved_jobs(current_user):
-    saved = SavedJob.query.filter_by(user_id=current_user.id)\
+def get_saved_jobs():
+    user_id = g.user_id
+    saved = SavedJob.query.filter_by(user_id=user_id)\
         .order_by(SavedJob.saved_at.desc()).all()
 
     results = []
@@ -37,10 +38,11 @@ def get_saved_jobs(current_user):
 
 @user_bp.route("/saved-jobs", methods=["POST"])
 @token_required
-def save_job(current_user):
-    data   = request.get_json() or {}
-    job_id = data.get("job_id")
-    status = data.get("status", "Saved")
+def save_job():
+    user_id = g.user_id
+    data    = request.get_json() or {}
+    job_id  = data.get("job_id")
+    status  = data.get("status", "Saved")
 
     if not job_id:
         return jsonify({"error": "job_id required"}), 400
@@ -49,9 +51,7 @@ def save_job(current_user):
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
-    existing = SavedJob.query.filter_by(
-        user_id=current_user.id, job_id=job_id
-    ).first()
+    existing = SavedJob.query.filter_by(user_id=user_id, job_id=job_id).first()
     if existing:
         return jsonify({
             "id":     str(existing.id),
@@ -60,7 +60,7 @@ def save_job(current_user):
             "notes":  existing.notes,
         }), 200
 
-    saved = SavedJob(user_id=current_user.id, job_id=job_id, status=status)
+    saved = SavedJob(user_id=user_id, job_id=job_id, status=status)
     db.session.add(saved)
     db.session.commit()
 
@@ -74,9 +74,10 @@ def save_job(current_user):
 
 @user_bp.route("/saved-jobs/<saved_id>", methods=["PUT"])
 @token_required
-def update_saved_job(current_user, saved_id):
+def update_saved_job(saved_id):
+    user_id = g.user_id
     saved = SavedJob.query.filter_by(
-        id=saved_id, user_id=current_user.id
+        id=saved_id, user_id=user_id
     ).first_or_404()
 
     data = request.get_json() or {}
@@ -97,9 +98,10 @@ def update_saved_job(current_user, saved_id):
 
 @user_bp.route("/saved-jobs/<saved_id>", methods=["DELETE"])
 @token_required
-def delete_saved_job(current_user, saved_id):
+def delete_saved_job(saved_id):
+    user_id = g.user_id
     saved = SavedJob.query.filter_by(
-        id=saved_id, user_id=current_user.id
+        id=saved_id, user_id=user_id
     ).first_or_404()
     db.session.delete(saved)
     db.session.commit()
