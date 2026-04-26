@@ -25,28 +25,46 @@ def create_app(env: str = None) -> Flask:
     init_db(app)
 
     # --- Import ALL Models inside app context ---
-    # This ensures models are registered with SQLAlchemy for migrations
     with app.app_context():
         from app.models import User, ChatMessage, InterviewSession, InterviewResponse  # noqa
-        from app.models.job import Job          # noqa
-        from app.models.saved_job import SavedJob   # noqa
-        from app.models.job_alert import JobAlert   # noqa
-        from app.models.resume_analysis import ResumeAnalysis # noqa
+        from app.models.job import Job                      # noqa
+        from app.models.saved_job import SavedJob           # noqa
+        from app.models.job_alert import JobAlert           # noqa
+        from app.models.resume_analysis import ResumeAnalysis  # noqa
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
 
     # --- Initialize CORS ---
-    CORS(app,
-        origins=[
-            "https://nirvexa-frontend.vercel.app",
-            "http://localhost:3000",
-            "http://localhost:5173",
-            "http://localhost:5174",
-        ],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization"],
-        supports_credentials=True
+    # Using resources dict so Flask-CORS applies headers on EVERY route
+    # including preflight OPTIONS requests for PUT / DELETE
+    CORS(
+        app,
+        resources={r"/api/*": {
+            "origins": [
+                # Web - production
+                "https://nirvexa-frontend.vercel.app",
+                # Web - local dev (all common Vite ports)
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                # Android emulator hits 10.0.2.2 for host machine localhost
+                "http://10.0.2.2",
+                "http://10.0.2.2:5000",
+                # Allow null origin (Android WebView / file:// during dev)
+                "null",
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+            "allow_headers": [
+                "Content-Type",
+                "Authorization",
+                "X-Requested-With",
+                "Accept",
+            ],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True,
+            "max_age": 86400,  # Cache preflight for 24h — reduces OPTIONS spam
+        }},
     )
 
     # --- Register Blueprints ---
@@ -59,7 +77,6 @@ def create_app(env: str = None) -> Flask:
     init_scheduler(app)
 
     # --- Initialize FAISS Semantic Search Index ---
-    # Pass app object so background thread can push its own app context
     from app.services.rag_pipeline import load_or_build_index
     load_or_build_index(app)
     app.logger.info("FAISS index load triggered at startup.")
@@ -79,27 +96,21 @@ def create_app(env: str = None) -> Flask:
 
 
 def _register_blueprints(app: Flask):
-    # Auth Routes
     from app.routes.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
 
-    # Chat Routes
     from app.routes.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix="/api")
 
-    # Interview Routes
     from app.routes.interview import interview_bp
     app.register_blueprint(interview_bp, url_prefix="/api/interview")
 
-    # Jobs Routes
     from app.routes.jobs import jobs_bp
     app.register_blueprint(jobs_bp, url_prefix="/api/jobs")
 
-    # Resume Analysis Routes
     from app.routes.resume import resume_bp
     app.register_blueprint(resume_bp)
 
-    # saved jobs 
     from app.routes.user import user_bp
     app.register_blueprint(user_bp)
 
@@ -133,7 +144,6 @@ def _register_error_handlers(app: Flask):
 def _setup_logging(app: Flask):
     log_level = logging.DEBUG if app.config.get("DEBUG") else logging.INFO
 
-    # Console Handler (Colored)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
     console_handler.setFormatter(ColoredFormatter(
@@ -148,7 +158,6 @@ def _setup_logging(app: Flask):
         }
     ))
 
-    # File Handler
     os.makedirs("logs", exist_ok=True)
     file_handler = logging.FileHandler("logs/nirvexa.log")
     file_handler.setLevel(logging.WARNING)
