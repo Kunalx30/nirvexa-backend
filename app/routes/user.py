@@ -10,6 +10,8 @@ from app.models.saved_job import SavedJob
 from app.middleware.auth_middleware import token_required
 from app.routes.jobs import _serialize_job
 
+from app.models.job_alert import JobAlert
+
 logger = logging.getLogger(__name__)
 user_bp = Blueprint("user", __name__, url_prefix="/api/user")
 
@@ -106,3 +108,66 @@ def delete_saved_job(saved_id):
     db.session.delete(saved)
     db.session.commit()
     return jsonify({"message": "Removed"}), 200
+
+# ───────────────── JOB ALERTS ───────────────── #
+
+@user_bp.route("/alerts", methods=["GET"])
+@token_required
+def get_alerts():
+    user_id = g.user_id
+
+    alerts = JobAlert.query.filter_by(user_id=user_id)\
+        .order_by(JobAlert.created_at.desc()).all()
+
+    return jsonify([
+        {
+            "id": str(a.id),
+            "keywords": a.keywords,
+            "location": a.location,
+            "frequency": a.frequency,
+            "is_active": a.is_active,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        }
+        for a in alerts
+    ]), 200
+
+
+@user_bp.route("/alerts", methods=["POST"])
+@token_required
+def create_alert():
+    user_id = g.user_id
+    data = request.get_json() or {}
+
+    alert = JobAlert(
+        user_id=user_id,
+        keywords=data.get("keywords", []),
+        location=data.get("location", ""),
+        frequency=data.get("frequency", "daily")
+    )
+
+    db.session.add(alert)
+    db.session.commit()
+
+    return jsonify({
+        "id": str(alert.id),
+        "keywords": alert.keywords,
+        "location": alert.location,
+        "frequency": alert.frequency,
+        "is_active": alert.is_active
+    }), 201
+
+
+@user_bp.route("/alerts/<alert_id>", methods=["DELETE"])
+@token_required
+def delete_alert(alert_id):
+    user_id = g.user_id
+
+    alert = JobAlert.query.filter_by(
+        id=alert_id,
+        user_id=user_id
+    ).first_or_404()
+
+    db.session.delete(alert)
+    db.session.commit()
+
+    return jsonify({"message": "Deleted"}), 200
