@@ -27,7 +27,8 @@ def create_app(env: str = None) -> Flask:
     # --- Import ALL Models inside app context ---
     with app.app_context():
         from app.models import User, ChatMessage, InterviewSession, InterviewResponse  # noqa
-        from app.models.job import Job                      # noqa
+        from app.models.job import Job         
+        from app.models.news_cache import NewsCache         # noqa
         from app.models.saved_job import SavedJob           # noqa
         from app.models.job_alert import JobAlert           # noqa
         from app.models.resume_analysis import ResumeAnalysis  # noqa
@@ -113,6 +114,9 @@ def _register_blueprints(app: Flask):
 
     from app.routes.user import user_bp
     app.register_blueprint(user_bp)
+
+    from app.routes.news import news_bp
+    app.register_blueprint(news_bp)
 
 
 def _register_error_handlers(app: Flask):

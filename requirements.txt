@@ -172,3 +172,6 @@ flask-jwt-extended==4.7.1
 
 # for email
 resend==2.29.0
+
+# for news
+feedparser

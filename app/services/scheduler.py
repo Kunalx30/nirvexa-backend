@@ -3,6 +3,7 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,23 @@ def _send_job_alerts(new_jobs: list):
             logger.error(f"[Alerts] DB commit failed: {e}")
 
 
+def run_news_pipeline():
+    """Fetch and cache news articles every 4 hours."""
+    from app.services.news_service import fetch_and_cache_news
+
+    logger.info("=== News Pipeline Started ===")
+    ctx = _app.app_context() if _app else None
+    if ctx:
+        ctx.push()
+    try:
+        stats = fetch_and_cache_news()
+        logger.info("=== News Pipeline Done | %s ===", stats)
+    except Exception as e:
+        logger.error("[News Pipeline] Failed: %s", e)
+    finally:
+        if ctx:
+            ctx.pop()
+
 def init_scheduler(app):
     """Call this from create_app() to start the scheduler."""
     global _app
@@ -179,5 +197,15 @@ def init_scheduler(app):
         replace_existing=True,
         misfire_grace_time=3600,
     )
+
+    # News refresh every 4 hours
+    scheduler.add_job(
+    run_news_pipeline,
+    IntervalTrigger(hours=4),
+    id='news_refresh_pipeline',
+    replace_existing=True,
+    misfire_grace_time=600,
+    )
+
     scheduler.start()
     logger.info("APScheduler started — daily pipeline at 2AM IST")

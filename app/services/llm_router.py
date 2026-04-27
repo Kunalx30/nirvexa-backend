@@ -404,3 +404,25 @@ def route_and_call(
                     "intent":        intent.value,
                     "used_fallback": True,
                 }
+            
+            # ── Internal Service Helper ───────────────────────────────────────────────────
+def call_mistral_simple(prompt: str, max_tokens: int = 200) -> str | None:
+    """
+    Lightweight Mistral call for internal services (news summarization etc).
+    Requires Flask app context to be active — called from scheduler which pushes context.
+    """
+    try:
+        client = Mistral(
+            api_key=current_app.config["MISTRAL_API_KEY"],
+            timeout_ms=30000
+        )
+        response = client.chat.complete(
+            model="mistral-small-latest",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning("[call_mistral_simple] Failed: %s", e)
+        return None
