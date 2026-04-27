@@ -118,6 +118,9 @@ def _register_blueprints(app: Flask):
     from app.routes.news import news_bp
     app.register_blueprint(news_bp)
 
+    from app.routes.career import career_bp
+    app.register_blueprint(career_bp)
+
 
 def _register_error_handlers(app: Flask):
     @app.errorhandler(400)
