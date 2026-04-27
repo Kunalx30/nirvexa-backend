@@ -1,5 +1,5 @@
 import logging
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, jsonify, request, g, current_app
 from app.middleware.auth_middleware import token_required
 
 logger = logging.getLogger(__name__)
@@ -97,4 +97,159 @@ def get_skill_gap():
     except Exception as e:
         logger.error("[Career Route] POST /api/career/skill-gap failed: %s", e)
         return jsonify({'error': 'Failed to generate skill gap analysis'}), 500
+    
 
+@career_bp.route('/api/jobs/salary-insights', methods=['GET'])
+def get_salary_insights():
+    """
+    GET /api/jobs/salary-insights?role=Data+Analyst&location=Bangalore
+    Hybrid: DB data + DeepSeek AI fallback for Indian market insights.
+    No auth required — public endpoint.
+    """
+    try:
+        role     = (request.args.get('role') or '').strip()
+        location = (request.args.get('location') or '').strip()
+
+        if not role:
+            return jsonify({'error': 'role parameter is required'}), 400
+
+        from app.models.job import Job
+        import re, json, openai
+
+        # ── Step 1: Query DB ──────────────────────────────────────────────────
+        query = Job.query.filter(
+            Job.title.ilike(f'%{role}%'),
+            Job.is_active == True
+        )
+        if location:
+            query = query.filter(Job.location.ilike(f'%{location}%'))
+        jobs = query.limit(50).all()
+
+        # ── Step 2: Try to extract clean LPA values from DB ───────────────────
+        salary_values = []
+        sources = set()
+
+        for job in jobs:
+            if not job.salary:
+                continue
+
+            raw = job.salary.lower()
+            sources.add(job.source)
+
+            # Only process if it looks like Indian LPA data
+            # Must contain 'lpa', 'lac', 'lakh', or small numbers (1-100 range)
+            is_indian = any(k in raw for k in ['lpa', 'lac', 'lakh', '₹', 'inr'])
+
+            if not is_indian:
+                continue
+
+            cleaned = raw.replace(',', '').replace('₹', '').replace('inr', '')
+            cleaned = cleaned.replace('lpa', '').replace('lac', '').replace('lakh', '').strip()
+            numbers = re.findall(r'\d+(?:\.\d+)?', cleaned)
+
+            if not numbers:
+                continue
+
+            nums = [float(n) for n in numbers]
+            # Only accept realistic LPA values (1–200 LPA)
+            nums = [n for n in nums if 1 <= n <= 200]
+
+            if nums:
+                salary_values.append(sum(nums) / len(nums))
+
+        # ── Step 3: If enough clean data, return DB-based insights ────────────
+        if len(salary_values) >= 5:
+            salary_values.sort()
+            count = len(salary_values)
+            return jsonify({
+                'success':        True,
+                'source':         'db',
+                'role':           role,
+                'location':       location or 'All India',
+                'min_salary_lpa': round(min(salary_values), 1),
+                'max_salary_lpa': round(max(salary_values), 1),
+                'avg_salary_lpa': round(sum(salary_values) / count, 1),
+                'median_lpa':     round(
+                    salary_values[count // 2] if count % 2 != 0
+                    else (salary_values[count // 2 - 1] + salary_values[count // 2]) / 2, 1
+                ),
+                'sample_count':   count,
+                'sources':        list(sources),
+                'note':           'Based on real job listings in our database.'
+            }), 200
+
+        # ── Step 4: Fall back to DeepSeek AI for market knowledge ─────────────
+        location_str = location or 'India'
+        prompt = f"""You are a salary expert for the Indian job market with up-to-date knowledge.
+
+Provide realistic salary insights for: {role} in {location_str}
+
+Respond ONLY with valid JSON. No preamble, no markdown, no backticks.
+
+{{
+  "min_salary_lpa": 6.0,
+  "max_salary_lpa": 18.0,
+  "avg_salary_lpa": 11.0,
+  "median_lpa": 10.0,
+  "fresher_lpa": 4.5,
+  "experienced_lpa": 20.0,
+  "top_paying_companies": ["Company A", "Company B", "Company C"],
+  "salary_factors": ["factor that increases salary 1", "factor 2"],
+  "market_demand": "high | medium | low",
+  "note": "one sentence about salary trend for this role in India"
+}}
+
+Rules:
+- All salary values must be realistic LPA figures for Indian market
+- fresher_lpa = typical starting salary for 0-1 year experience
+- experienced_lpa = typical salary for 5+ years experience
+- top_paying_companies must be real companies hiring for this role in India"""
+
+        try:
+            client = openai.OpenAI(
+                api_key=current_app.config["DEEPSEEK_API_KEY"],
+                base_url="https://api.deepseek.com/v1",
+                timeout=60.0
+            )
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a salary expert. Always respond with valid JSON only. No markdown, no backticks."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=512,
+                temperature=0.2,
+            )
+
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            raw = raw.strip()
+
+            ai_data = json.loads(raw)
+            ai_data['success']  = True
+            ai_data['source']   = 'ai'
+            ai_data['role']     = role
+            ai_data['location'] = location_str
+            ai_data['sample_count'] = len(jobs)
+
+            return jsonify(ai_data), 200
+
+        except Exception as ai_error:
+            logger.error("[SalaryInsights] AI fallback failed: %s", ai_error)
+            return jsonify({
+                'success':      False,
+                'error':        'Insufficient salary data and AI fallback failed. Try a different role.'
+            }), 500
+
+    except Exception as e:
+        logger.error("[Career Route] GET /api/jobs/salary-insights failed: %s", e)
+        return jsonify({'error': 'Failed to fetch salary insights'}), 500

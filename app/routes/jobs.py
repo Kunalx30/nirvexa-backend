@@ -182,54 +182,6 @@ def match_jobs():
 
     return jsonify({"matches": results, "skills_used": skills}), 200
 
-
-# ── GET /api/jobs/salary-insights ────────────────────────────────
-
-@jobs_bp.route("/salary-insights", methods=["GET"])
-def salary_insights():
-    role     = request.args.get("role", "").strip()
-    location = request.args.get("location", "").strip()
-
-    if not role:
-        return jsonify({"error": "role param required"}), 400
-
-    query = Job.query.filter(Job.is_active == True, Job.title.ilike(f"%{role}%"))
-    if location:
-        query = query.filter(Job.location.ilike(f"%{location}%"))
-
-    jobs = query.limit(200).all()
-
-    salaries = []
-    for job in jobs:
-        if not job.salary:
-            continue
-        nums = re.findall(r"[\d,]+", job.salary.replace("L", "00000").replace("K", "000"))
-        nums = [int(n.replace(",", "")) for n in nums if n.replace(",", "").isdigit()]
-        if nums:
-            salaries.extend(nums)
-
-    if not salaries:
-        return jsonify({
-            "role": role, "location": location or "All India",
-            "sample_count": len(jobs),
-            "message": "Salary data not available for this role yet.",
-        }), 200
-
-    salaries.sort()
-    mid = len(salaries) // 2
-
-    return jsonify({
-        "role":          role,
-        "location":      location or "All India",
-        "min_salary":    min(salaries),
-        "max_salary":    max(salaries),
-        "median_salary": salaries[mid],
-        "avg_salary":    round(sum(salaries) / len(salaries)),
-        "sample_count":  len(jobs),
-        "sources":       list({j.source for j in jobs if j.source}),
-    }), 200
-
-
 # ── Saved Jobs ────────────────────────────────────────────────────
 
 @jobs_bp.route("/saved", methods=["GET"])
