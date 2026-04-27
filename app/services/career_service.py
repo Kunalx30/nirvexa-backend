@@ -214,3 +214,103 @@ Rules:
     except Exception as e:
         logger.error("[SkillGap] Skill gap generation failed: %s", e)
         return {"success": False, "error": "Failed to generate skill gap analysis. Please try again."}
+    
+# ── In-memory cache for company research ─────────────────────────────────────
+_company_cache: dict = {}
+
+
+def get_company_research(company_name: str) -> dict:
+    """
+    Returns research on a company using DeepSeek V3.
+    Results cached in memory per company name to avoid repeated API calls.
+    """
+    import json
+    import openai
+
+    cache_key = company_name.lower().strip()
+
+    # Return cached result if available
+    if cache_key in _company_cache:
+        logger.info("[CompanyResearch] Cache hit for '%s'", company_name)
+        return {"success": True, "data": _company_cache[cache_key]}
+
+    prompt = f"""You are a company research expert with deep knowledge of the Indian and global tech job market.
+
+Research this company for a job seeker: {company_name}
+
+Respond ONLY with valid JSON. No preamble, no markdown, no backticks.
+
+{{
+  "summary": "2-3 sentence overview of what the company does",
+  "industry": "primary industry",
+  "founded": "year founded",
+  "headquarters": "city, country",
+  "india_presence": "description of their India offices/teams or 'No India presence'",
+  "tech_stack": ["technology 1", "technology 2", "technology 3"],
+  "culture_notes": "2 sentences about work culture, values, work-life balance",
+  "hiring_process": "typical hiring process steps for this company",
+  "interview_tips": [
+    "specific tip 1 for interviewing at this company",
+    "specific tip 2",
+    "specific tip 3"
+  ],
+  "common_interview_questions": [
+    "example question they commonly ask",
+    "example question 2"
+  ],
+  "glassdoor_rating": 4.1,
+  "avg_salary_india_lpa": "range like 12-25 LPA or 'Not available'",
+  "pros": ["pro 1", "pro 2", "pro 3"],
+  "cons": ["con 1", "con 2"]
+}}
+
+Rules:
+- glassdoor_rating must be a realistic float between 1.0 and 5.0, or null if unknown
+- tech_stack must be real technologies this company actually uses
+- interview_tips must be specific to this company, not generic advice
+- If company is unknown or very obscure, still return best-effort data with honest uncertainty"""
+
+    try:
+        client = openai.OpenAI(
+            api_key=current_app.config["DEEPSEEK_API_KEY"],
+            base_url="https://api.deepseek.com/v1",
+            timeout=60.0
+        )
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=1024,
+            temperature=0.3,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+
+        result = json.loads(raw)
+
+        # Cache the result
+        _company_cache[cache_key] = result
+        logger.info("[CompanyResearch] Cached result for '%s'", company_name)
+
+        return {"success": True, "data": result}
+
+    except json.JSONDecodeError as e:
+        logger.error("[CompanyResearch] JSON parse failed: %s", e)
+        return {"success": False, "error": "AI returned malformed response. Please try again."}
+
+    except Exception as e:
+        logger.error("[CompanyResearch] Failed for '%s': %s", company_name, e)
+        return {"success": False, "error": "Failed to fetch company research. Please try again."}

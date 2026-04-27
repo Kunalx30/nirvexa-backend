@@ -253,3 +253,37 @@ Rules:
     except Exception as e:
         logger.error("[Career Route] GET /api/jobs/salary-insights failed: %s", e)
         return jsonify({'error': 'Failed to fetch salary insights'}), 500
+    
+
+@career_bp.route('/api/career/company-research', methods=['POST'])
+def company_research():
+    """
+    POST /api/career/company-research
+    Body: { "company_name": "Google" }
+    No auth required — public endpoint.
+    Cached per company name to avoid repeated API calls.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        company_name = (data.get('company_name') or '').strip()
+        if not company_name:
+            return jsonify({'error': 'company_name is required'}), 400
+
+        from app.services.career_service import get_company_research
+        result = get_company_research(company_name)
+
+        if not result['success']:
+            return jsonify({'error': result['error']}), 500
+
+        return jsonify({
+            'success':      True,
+            'company_name': company_name,
+            'research':     result['data'],
+        }), 200
+
+    except Exception as e:
+        logger.error("[Career Route] POST /api/career/company-research failed: %s", e)
+        return jsonify({'error': 'Failed to fetch company research'}), 500
