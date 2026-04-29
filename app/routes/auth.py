@@ -16,6 +16,12 @@ from app.utils.helpers import (
     error_response,
 )
 
+import secrets
+from datetime import timedelta
+
+import logging
+logger = logging.getLogger(__name__)
+
 auth_bp = Blueprint("auth", __name__)
 bcrypt = Bcrypt()
 
@@ -306,3 +312,161 @@ def get_current_user():
         data={"user": user.to_dict()},
         message="User profile retrieved"
     )
+
+
+# ─────────────────────────────────────────────
+# PUT /api/auth/me
+# ─────────────────────────────────────────────
+@auth_bp.route("/me", methods=["PUT"])
+@token_required
+def update_profile():
+    """Update skills, preferred_location, job_type, experience_level."""
+    data = request.get_json()
+
+    if not data:
+        return error_response("Request body is required", 400)
+
+    user = User.query.filter_by(id=g.user_id).first()
+    if not user:
+        return error_response("User not found", 404)
+
+    if "skills" in data:
+        skills = data["skills"]
+        if isinstance(skills, list):
+            user.skills = [s.strip() for s in skills if isinstance(s, str) and s.strip()]
+
+    if "preferred_location" in data:
+        user.preferred_location = (data["preferred_location"] or "").strip() or None
+
+    if "job_type" in data:
+        valid_types = ["full-time", "part-time", "internship", "freelance", "remote"]
+        if data["job_type"] in valid_types:
+            user.job_type = data["job_type"]
+
+    if "experience_level" in data:
+        valid_levels = ["fresher", "junior", "mid", "senior", "lead"]
+        if data["experience_level"] in valid_levels:
+            user.experience_level = data["experience_level"]
+
+    db.session.commit()
+
+    return success_response(
+        data={"user": user.to_dict()},
+        message="Profile updated successfully"
+    )
+
+
+# ─────────────────────────────────────────────
+# PUT /api/auth/change-password
+# ─────────────────────────────────────────────
+@auth_bp.route("/change-password", methods=["PUT"])
+@token_required
+def change_password():
+    """Change password — requires current password verification."""
+    data = request.get_json()
+
+    if not data:
+        return error_response("Request body is required", 400)
+
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+
+    if not current_password or not new_password:
+        return error_response("current_password and new_password are required", 400)
+
+    user = User.query.filter_by(id=g.user_id).first()
+    if not user:
+        return error_response("User not found", 404)
+
+    if not user.password_hash:
+        return error_response("Google accounts cannot change password here", 400)
+
+    if not bcrypt.check_password_hash(user.password_hash, current_password):
+        return error_response("Current password is incorrect", 401)
+
+    password_check = validate_password(new_password)
+    if not password_check["is_valid"]:
+        return error_response(
+            "Password does not meet requirements",
+            400,
+            errors=password_check["errors"]
+        )
+
+    user.password_hash = bcrypt.generate_password_hash(new_password).decode("utf-8")
+    user.refresh_token = None  # force re-login on all devices
+    db.session.commit()
+
+    return success_response(data={}, message="Password changed successfully")
+
+# ─────────────────────────────────────────────
+# POST /api/auth/forgot-password
+# ─────────────────────────────────────────────
+@auth_bp.route("/forgot-password", methods=["POST"])
+@limiter.limit("3 per minute")
+def forgot_password():
+    data = request.get_json()
+    if not data:
+        return error_response("Request body is required", 400)
+
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return error_response("Email is required", 400)
+    
+
+    user = User.query.filter_by(email=email).first()
+
+    # Always return success — don't reveal if email exists
+    if user and user.is_active:
+        token = secrets.token_urlsafe(32)
+        user.reset_token = token
+        user.reset_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.session.commit()
+
+        frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:5173")
+        reset_url = f"{frontend_url}/reset-password?token={token}"
+        logger.warning(f"[DEV] Reset URL: {reset_url}")
+
+        from app.services.email_service import send_password_reset
+        send_password_reset(user.email, user.name, reset_url)
+
+    return success_response(
+        data={},
+        message="If this email exists, a reset link has been sent."
+    )
+
+
+# ─────────────────────────────────────────────
+# POST /api/auth/reset-password
+# ─────────────────────────────────────────────
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json()
+    if not data:
+        return error_response("Request body is required", 400)
+
+    token       = (data.get("token") or "").strip()
+    new_password = (data.get("new_password") or "")
+
+    if not token or not new_password:
+        return error_response("token and new_password are required", 400)
+
+    user = User.query.filter_by(reset_token=token).first()
+
+    if not user or not user.reset_token_expiry:
+        return error_response("Invalid or expired reset link", 400)
+
+    if datetime.now(timezone.utc) > user.reset_token_expiry:
+        return error_response("Reset link has expired. Please request a new one.", 400)
+
+    password_check = validate_password(new_password)
+    if not password_check["is_valid"]:
+        return error_response("Password does not meet requirements", 400,
+                              errors=password_check["errors"])
+
+    user.password_hash     = bcrypt.generate_password_hash(new_password).decode("utf-8")
+    user.reset_token       = None
+    user.reset_token_expiry = None
+    user.refresh_token     = None  # force re-login everywhere
+    db.session.commit()
+
+    return success_response(data={}, message="Password reset successfully. Please log in.")

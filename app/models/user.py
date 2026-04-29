@@ -46,6 +46,9 @@ class User(db.Model):
     # --- Auth Tokens ---
     refresh_token = db.Column(db.Text, nullable=True)
 
+    reset_token        = db.Column(db.String(255), nullable=True)
+    reset_token_expiry = db.Column(db.DateTime(timezone=True), nullable=True)
+
     # --- Status ---
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
