@@ -1,0 +1,137 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    top=0.75cm,
+    bottom=0.75cm,
+    left=1.3cm,
+    right=1.3cm,
+]{geometry}
+\usepackage{xcolor}
+\definecolor{accentColor}{RGB}{14, 100, 170}
+\definecolor{ruleGray}{RGB}{200, 200, 200}
+\definecolor{primaryColor}{RGB}{0,0,0}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=accentColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{iftex}
+\usepackage{tabularx}
+\usepackage{array}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\linespread{1.03}
+
+\raggedright
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.25cm}
+\pagenumbering{gobble}
+
+\makeatletter
+\renewcommand{\section}[1]{%
+    \needspace{3\baselineskip}%
+    \vspace{0.16cm}%
+    \noindent\hspace{-3pt}{\color{accentColor}\rule{3.5pt}{11pt}}\hspace{5pt}%
+    {\color{accentColor}\bfseries\small\MakeUppercase{#1}}%
+    \vspace{1pt}\par\noindent{\color{ruleGray}\rule{\linewidth}{0.4pt}}%
+    \vspace{0.05cm}%
+}
+\makeatother
+
+\renewcommand\labelitemi{{\color{accentColor}$\vcenter{\hbox{\tiny$\bullet$}}$}}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.03cm, partopsep=0pt, itemsep=1pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.03cm, partopsep=0pt, itemsep=1pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0cm}{0cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 3.5cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft \secondColumn
+    \end{paracol}
+    \endonecolentry
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+    % ── HEADER: name left, contact right ─────────────────────────────────────
+    \noindent
+    \begin{tabularx}{\linewidth}{@{}X r@{}}
+        {\fontsize{21pt}{21pt}\selectfont\bfseries\color{accentColor}{{FULL_NAME}}} &
+        \begin{tabular}[t]{@{}r@{}}
+            {\small {{LOCATION}}} \\[1pt]
+            \small\hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}} \\[1pt]
+            \small\hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}} \\[1pt]
+            \small\hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn} \enspace|\enspace \hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}{{PORTFOLIO_CENTER}}
+        \end{tabular}
+    \end{tabularx}
+
+    \vspace{1pt}
+    \noindent{\color{accentColor}\rule{\linewidth}{1.6pt}}
+    \vspace{7pt}
+
+    % ── TWO-COLUMN BODY: 57% left / 43% right ────────────────────────────────
+    \setlength{\columnsep}{0.30cm}
+    \begin{paracol}{2}
+    \setcolumnwidth{0.57\linewidth, 0.43\linewidth}
+
+    % LEFT: Experience + Projects
+    \section{{{EXPERIENCE_SECTION_TITLE}}}
+    {{EXPERIENCE_BLOCK}}
+
+    \section{Projects}
+    {{PROJECTS_BLOCK}}
+
+    \switchcolumn
+
+    % RIGHT: Summary + Skills + Education + Certifications
+    \section{Summary}
+    {\small {{SUMMARY}}}
+
+    \section{Technical Skills}
+    \small{{SKILLS_BLOCK}}
+
+    \section{Education}
+    \small{{EDUCATION_BLOCK}}
+
+    \section{Certifications}
+    \begin{highlightsforbulletentries}
+        \small{{CERTIFICATIONS_BLOCK}}
+    \end{highlightsforbulletentries}
+
+    \end{paracol}
+
+\end{document}

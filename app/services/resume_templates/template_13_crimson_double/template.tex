@@ -1,0 +1,131 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    ignoreheadfoot,
+    top=1.1cm,
+    bottom=1.1cm,
+    left=1.8cm,
+    right=1.8cm,
+]{geometry}
+\usepackage{titlesec}
+\usepackage[dvipsnames]{xcolor}
+\definecolor{crimsonred}{RGB}{153, 0, 0}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=crimsonred
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{iftex}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{charter}
+
+\raggedright
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+
+\titleformat{\section}
+  {\needspace{3\baselineskip}\bfseries\normalsize\color{crimsonred}}
+  {}{0pt}{}
+  [{\vspace{2pt}\color{crimsonred}{\hrule height 2pt}\vspace{0.8pt}{\hrule height 0.4pt}}]
+\titlespacing{\section}{0pt}{0.12cm}{0.07cm}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\small$\bullet$}}$}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0.00001cm}{0.00001cm}
+}{\end{adjustwidth}}
+
+% Dates rendered in crimson italic in right column
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 4.5cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft {\small\itshape\color{crimsonred}\secondColumn}
+    \end{paracol}
+    \endonecolentry
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+\newsavebox\ANDbox
+\sbox\ANDbox{\textcolor{crimsonred}{$|$}}
+\newcommand{\AND}{\unskip\cleaders\copy\ANDbox\hskip\wd\ANDbox\ignorespaces}
+
+% HEADER
+{\centering
+    {\fontsize{24pt}{24pt}\selectfont\textbf{{{FULL_NAME}}}}\\[3pt]
+    {\color{crimsonred}\hrule height 1pt}\vspace{3pt}
+    \small
+    \mbox{{{LOCATION}}}\kern 5pt\AND\kern 5pt
+    \mbox{\hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}}}\kern 5pt\AND\kern 5pt
+    \mbox{\hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}}}\kern 5pt\AND\kern 5pt
+    \mbox{\hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn}}\kern 5pt\AND\kern 5pt
+    \mbox{\hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}}{{PORTFOLIO_HEADER_MONO}}
+\par}
+\vspace{4pt}
+
+\section{Summary}
+\begin{onecolentry}
+    {{SUMMARY}}
+\end{onecolentry}
+
+\section{Technical Skills}
+\begin{onecolentry}
+    {{SKILLS_BLOCK}}
+\end{onecolentry}
+
+\section{Education}
+\begin{onecolentry}
+    {{EDUCATION_BLOCK}}
+\end{onecolentry}
+
+\section{{{EXPERIENCE_SECTION_TITLE}}}
+\begin{onecolentry}
+    {{EXPERIENCE_BLOCK}}
+\end{onecolentry}
+
+\section{Projects}
+\begin{onecolentry}
+    {{PROJECTS_BLOCK}}
+\end{onecolentry}
+
+\section{Certifications}
+\begin{onecolentry}
+    \begin{highlightsforbulletentries}
+        {{CERTIFICATIONS_BLOCK}}
+    \end{highlightsforbulletentries}
+\end{onecolentry}
+
+\end{document}

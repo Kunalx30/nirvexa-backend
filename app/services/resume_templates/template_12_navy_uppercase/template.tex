@@ -1,0 +1,131 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    ignoreheadfoot,
+    top=1.2cm,
+    bottom=1.2cm,
+    left=2.0cm,
+    right=2.0cm,
+]{geometry}
+\usepackage{titlesec}
+\usepackage[dvipsnames]{xcolor}
+\definecolor{navyblue}{RGB}{10, 45, 100}
+\colorlet{accentColor}{navyblue}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=navyblue
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{iftex}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{palatino}
+
+\raggedright
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+
+\titleformat{\section}
+  {\needspace{3\baselineskip}\bfseries\normalsize\color{navyblue}}
+  {}{0pt}
+  {\MakeUppercase}
+  [{\color{navyblue}\vspace{1pt}\hrule height 0.8pt}]
+\titlespacing{\section}{0pt}{0.18cm}{0.08cm}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\small$\bullet$}}$}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.04cm, partopsep=0pt, itemsep=0pt, leftmargin=12pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.04cm, partopsep=0pt, itemsep=0pt, leftmargin=12pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0.00001cm}{0.00001cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 4.3cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft \secondColumn
+    \end{paracol}
+    \endonecolentry
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+\newsavebox\ANDbox
+\sbox\ANDbox{\textcolor{navyblue}{$|$}}
+\newcommand{\AND}{\unskip\cleaders\copy\ANDbox\hskip\wd\ANDbox\ignorespaces}
+
+% HEADER
+{\centering
+    {\fontsize{24pt}{24pt}\selectfont\textbf{{{FULL_NAME}}}}\\[3pt]
+    {\small\color{navyblue}
+    {{LOCATION}} \quad\textbullet\quad
+    \hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}} \quad\textbullet\quad
+    \hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}} \quad\textbullet\quad
+    \hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn} \quad\textbullet\quad
+    \hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}{{PORTFOLIO_CENTER_COLOR}}}
+\par}
+\vspace{6pt}
+
+\section{Professional Summary}
+\begin{onecolentry}
+    {{SUMMARY}}
+\end{onecolentry}
+
+\section{Technical Skills}
+\begin{onecolentry}
+    {{SKILLS_BLOCK}}
+\end{onecolentry}
+
+\section{Education}
+\begin{onecolentry}
+    {{EDUCATION_BLOCK}}
+\end{onecolentry}
+
+\section{{{EXPERIENCE_SECTION_TITLE}}}
+\begin{onecolentry}
+    {{EXPERIENCE_BLOCK}}
+\end{onecolentry}
+
+\section{Projects}
+\begin{onecolentry}
+    {{PROJECTS_BLOCK}}
+\end{onecolentry}
+
+\section{Certifications}
+\begin{onecolentry}
+    \begin{highlightsforbulletentries}
+        {{CERTIFICATIONS_BLOCK}}
+    \end{highlightsforbulletentries}
+\end{onecolentry}
+
+\end{document}

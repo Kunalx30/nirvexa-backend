@@ -1,0 +1,119 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    ignoreheadfoot,
+    top=0.9cm,
+    bottom=0.9cm,
+    left=1.5cm,
+    right=1.5cm,
+]{geometry}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\definecolor{accentColor}{RGB}{31, 97, 141}
+\definecolor{sidebarBg}{RGB}{240, 245, 250}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=accentColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{iftex}
+\usepackage{needspace}
+\usepackage{mdframed}
+
+\ifPDFTeX
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+    \usepackage{lmodern}
+\fi
+
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\pagenumbering{gobble}
+\raggedright
+\linespread{1.06}
+
+% Section headers: uppercase, accent colored, with rule
+\titleformat{\section}
+    {\needspace{3\baselineskip}\bfseries\small\color{accentColor}}
+    {}{0pt}{}
+    [\vspace{1pt}{\color{accentColor}\titlerule[0.8pt]}]
+\titlespacing{\section}{0pt}{0.32cm}{0.16cm}
+
+\renewcommand\labelitemi{{\color{accentColor}\small$\bullet$}}
+
+\newenvironment{tightitemize}{
+    \begin{itemize}[topsep=3pt, parsep=1pt, partopsep=0pt, itemsep=3pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+% ── HEADER ────────────────────────────────────────────────────────────────────
+\begin{center}
+    {\fontsize{26pt}{26pt}\selectfont\textbf{\textcolor{accentColor}{{{FULL_NAME}}}}}\\[5pt]
+    \normalsize
+    {{LOCATION}} \enspace{\color{accentColor}$|$}\enspace
+    \hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}} \enspace{\color{accentColor}$|$}\enspace
+    \hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}} \enspace{\color{accentColor}$|$}\enspace
+    \hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn} \enspace{\color{accentColor}$|$}\enspace
+    \hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}{{PORTFOLIO_CENTER_COLOR}}
+\end{center}
+
+\vspace{2pt}
+\noindent{\color{accentColor}\rule{\textwidth}{1.2pt}}
+\vspace{8pt}
+
+% ── TWO-COLUMN BODY ───────────────────────────────────────────────────────────
+\noindent
+\begin{minipage}[t]{0.61\textwidth}
+\vspace{0pt}
+
+% LEFT — EXPERIENCE
+\section{{{EXPERIENCE_SECTION_TITLE}}}
+{{EXPERIENCE_BLOCK_LEFT}}
+
+% LEFT — PROJECTS
+\section{Projects}
+{{PROJECTS_BLOCK_LEFT}}
+
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.36\textwidth}
+\vspace{0pt}
+
+% RIGHT — SUMMARY
+\section{Summary}
+{\small {{SUMMARY}}}
+
+\vspace{0.2cm}
+
+% RIGHT — EDUCATION
+\section{Education}
+{{EDUCATION_BLOCK_RIGHT}}
+
+% RIGHT — SKILLS
+\section{Skills}
+{\small {{SKILLS_BLOCK_RIGHT}}}
+
+\vspace{0.1cm}
+
+% RIGHT — CERTIFICATIONS
+\section{Certifications}
+\begin{tightitemize}
+    \small
+    {{CERTIFICATIONS_BLOCK_RIGHT}}
+\end{tightitemize}
+
+\end{minipage}
+
+\end{document}
+

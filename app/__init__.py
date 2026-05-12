@@ -32,6 +32,8 @@ def create_app(env: str = None) -> Flask:
         from app.models.saved_job import SavedJob           # noqa
         from app.models.job_alert import JobAlert           # noqa
         from app.models.resume_analysis import ResumeAnalysis  # noqa
+        from app.models.resume_template import ResumeTemplate  # noqa
+        from app.models.user_resume import UserResume          # noqa
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)

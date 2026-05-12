@@ -1,0 +1,139 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    top=0.75cm,
+    bottom=0.75cm,
+    left=1.35cm,
+    right=1.35cm,
+]{geometry}
+\usepackage{xcolor}
+\definecolor{headerBg}{RGB}{22, 45, 90}
+\definecolor{accentColor}{RGB}{22, 45, 90}
+\definecolor{primaryColor}{RGB}{0,0,0}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=primaryColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{iftex}
+\usepackage{mdframed}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{charter}
+\raggedright
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+
+\makeatletter
+\renewcommand{\section}[1]{%
+    \needspace{3\baselineskip}%
+    \vspace{0.10cm}%
+    {\bfseries\normalsize\color{accentColor} #1}%
+    \vspace{1pt}\par\noindent{\color{accentColor}\rule{\linewidth}{0.7pt}}%
+    \vspace{0.02cm}%
+}
+\makeatother
+
+\renewcommand\labelitemi{{\color{accentColor}$\vcenter{\hbox{\small$\bullet$}}$}}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.02cm, parsep=0.02cm, partopsep=0pt, itemsep=0pt, leftmargin=12pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.02cm, parsep=0.02cm, partopsep=0pt, itemsep=0pt, leftmargin=12pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0cm}{0cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 3.9cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft {\small\secondColumn}
+    \end{paracol}
+    \endonecolentry
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+    \begin{mdframed}[
+        backgroundcolor=headerBg,
+        linewidth=0pt,
+        innerleftmargin=0.42cm,
+        innerrightmargin=0.42cm,
+        innertopmargin=0.34cm,
+        innerbottommargin=0.32cm,
+        skipabove=0pt,
+        skipbelow=0pt
+    ]
+        {\fontsize{20pt}{22pt}\selectfont \textbf{\textcolor{white}{{{FULL_NAME}}}}}
+
+        \vspace{3pt}
+        \small\textcolor{white}{%
+        {{LOCATION}} \enspace\textcolor{white}{$\cdot$}\enspace
+        \hrefWithoutArrow{tel:{{PHONE_RAW}}}{\textcolor{white}{{{PHONE}}}} \enspace\textcolor{white}{$\cdot$}\enspace
+        \hrefWithoutArrow{mailto:{{EMAIL}}}{\textcolor{white}{{{EMAIL}}}}%
+        }
+
+        \vspace{1pt}
+        \small\textcolor{white}{%
+        \hrefWithoutArrow{{{LINKEDIN_URL}}}{\textcolor{white}{LinkedIn}} \enspace\textcolor{white}{$\cdot$}\enspace
+        \hrefWithoutArrow{{{GITHUB_URL}}}{\textcolor{white}{GitHub}}{{PORTFOLIO_HEADER_WHITE}}%
+        }
+    \end{mdframed}
+
+    \vspace{0.08cm}
+
+    \section{Professional Summary}
+    \begin{onecolentry}
+        {{SUMMARY}}
+    \end{onecolentry}
+
+    \section{Technical Skills}
+    \begin{onecolentry}
+        {{SKILLS_BLOCK}}
+    \end{onecolentry}
+
+    \section{Education}
+    {{EDUCATION_BLOCK}}
+
+    \section{{{EXPERIENCE_SECTION_TITLE}}}
+    {{EXPERIENCE_BLOCK}}
+
+    \section{Projects}
+    {{PROJECTS_BLOCK}}
+
+    \section{Certifications}
+    \begin{onecolentry}
+        \begin{highlightsforbulletentries}
+            {{CERTIFICATIONS_BLOCK}}
+        \end{highlightsforbulletentries}
+    \end{onecolentry}
+
+\end{document}

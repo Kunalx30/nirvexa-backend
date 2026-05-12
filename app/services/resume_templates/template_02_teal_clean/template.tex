@@ -1,0 +1,142 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    top=0.45cm,
+    bottom=0.45cm,
+    left=0.45cm,
+    right=0.45cm,
+]{geometry}
+\usepackage{xcolor}
+\definecolor{sidebarBg}{RGB}{26, 54, 80}
+\definecolor{sidebarAccent}{RGB}{80, 185, 180}
+\definecolor{accentColor}{RGB}{26, 54, 80}
+\definecolor{primaryColor}{RGB}{0,0,0}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=accentColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{needspace}
+\usepackage{iftex}
+\usepackage{mdframed}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{charter}
+\raggedright
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\pagenumbering{gobble}
+
+% Right-panel section heading
+\makeatletter
+\renewcommand{\section}[1]{%
+    \needspace{3\baselineskip}%
+    \vspace{0.24cm}%
+    {\color{accentColor}\bfseries\large #1}%
+    \vspace{2pt}\par\noindent{\color{accentColor}\rule{\linewidth}{1.4pt}}%
+    \vspace{0.11cm}%
+}
+\makeatother
+
+% Sidebar section heading
+\newcommand{\sideSection}[1]{%
+    \vspace{0.28cm}%
+    {\color{sidebarAccent}\bfseries\small\MakeUppercase{#1}}%
+    \vspace{3pt}\par\noindent{\color{sidebarAccent}\rule{\linewidth}{0.5pt}}%
+    \vspace{0.08cm}%
+}
+
+\renewcommand\labelitemi{{\color{accentColor}$\vcenter{\hbox{\small$\bullet$}}$}}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.06cm, parsep=0.04cm, partopsep=0pt, itemsep=1pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.04cm, partopsep=0pt, itemsep=1pt, leftmargin=10pt, label={\color{sidebarAccent}\tiny$\bullet$}]
+}{\end{itemize}}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+\noindent
+% ══ SIDEBAR 30% + MAIN 70% — no \hfill gap, flush together ══════════════════
+\begin{minipage}[t]{0.300\textwidth}
+\begin{mdframed}[
+    backgroundcolor=sidebarBg,
+    linewidth=0pt,
+    innerleftmargin=0.40cm,
+    innerrightmargin=0.35cm,
+    innertopmargin=0.50cm,
+    innerbottommargin=0.50cm,
+    skipabove=0pt,
+    skipbelow=0pt
+]
+
+    % Name
+    {\fontsize{15pt}{17pt}\selectfont\bfseries\color{white}{{FULL_NAME}}}
+
+    \vspace{5pt}
+    \noindent{\color{sidebarAccent}\rule{\linewidth}{0.7pt}}
+
+    % Contact
+    \sideSection{Contact}
+    \begingroup\color{white}\small\raggedright
+        \hrefWithoutArrow{tel:{{PHONE_RAW}}}{\color{white}{{PHONE}}}\\[3pt]
+        \hrefWithoutArrow{mailto:{{EMAIL}}}{\color{white}{{EMAIL}}}\\[3pt]
+        {{LOCATION}}\\[3pt]
+        \hrefWithoutArrow{{{LINKEDIN_URL}}}{\color{white}LinkedIn}\\[3pt]
+        \hrefWithoutArrow{{{GITHUB_URL}}}{\color{white}GitHub}{{PORTFOLIO_HEADER_WHITE}}%
+    \endgroup
+
+    % Skills
+    \sideSection{Technical Skills}
+    \begingroup\color{white}\small\raggedright
+        {{SKILLS_BLOCK}}
+    \endgroup
+
+    % Education
+    \sideSection{Education}
+    \begingroup\color{white}\small\raggedright
+        {{EDUCATION_BLOCK}}
+    \endgroup
+
+\end{mdframed}
+\end{minipage}%
+% NO \hfill — use explicit width so total = exactly \textwidth
+\begin{minipage}[t]{0.700\textwidth}
+\vspace{0.28cm}
+\begin{adjustwidth}{0.45cm}{0.45cm}
+
+    \section{Summary}
+    {{SUMMARY}}
+
+    \section{{{EXPERIENCE_SECTION_TITLE}}}
+    {{EXPERIENCE_BLOCK}}
+
+    \section{Projects}
+    {{PROJECTS_BLOCK}}
+
+    \section{Certifications}
+    \begin{highlights}
+        {{CERTIFICATIONS_BLOCK}}
+    \end{highlights}
+
+\end{adjustwidth}
+\end{minipage}
+
+\end{document}

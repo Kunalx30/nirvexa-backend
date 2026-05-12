@@ -1,0 +1,120 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    top=0.55cm,
+    bottom=0.55cm,
+    left=0.65cm,
+    right=0.65cm,
+]{geometry}
+\usepackage{xcolor}
+\definecolor{accent}{RGB}{112, 72, 32}
+\definecolor{lightbg}{RGB}{238, 230, 218}
+\definecolor{rulecolor}{RGB}{150, 110, 60}
+\definecolor{darktext}{RGB}{40, 30, 20}
+\definecolor{softgray}{RGB}{200, 185, 165}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amssymb}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[colorlinks=true, urlcolor=accent]{hyperref}
+\usepackage{tabularx}
+\usepackage{needspace}
+\usepackage{mdframed}
+\usepackage{changepage}
+
+\pagestyle{empty}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{0pt}
+\linespread{1.04}
+
+\titleformat{\section}
+  {\normalsize\bfseries\color{accent}}
+  {}{0em}{}
+  [\color{rulecolor}\vspace{1pt}\hrule height 0.6pt\vspace{2pt}]
+\titlespacing{\section}{0pt}{9pt}{4pt}
+
+% Text-based skill bar: #1 = filled width out of 3.0cm
+\newcommand{\skillbar}[1]{%
+    \noindent{\color{softgray}\rule{3.0cm}{0.15cm}}%
+    \hspace{-3.0cm}{\color{accent}\rule{#1}{0.15cm}}%
+    \par\vspace{3pt}%
+}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.08cm, parsep=0.05cm, partopsep=0pt, itemsep=2pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newcommand{\entry}[3]{%
+  {\small\bfseries\color{accent}#1}\hfill{\small\itshape #2}\\
+  {\small\itshape\color{darktext}#3}%
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+% HEADER
+\noindent
+\colorbox{lightbg}{%
+  \begin{minipage}{\dimexpr\textwidth-2\fboxsep\relax}
+    \vspace{6pt}
+    \begin{center}
+      {\LARGE\bfseries\color{accent} {{FULL_NAME}}}\\[3pt]
+      \small\color{darktext}
+        \hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}}\enspace\textbar\enspace
+        \hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}}\enspace\textbar\enspace
+        {{LOCATION}}
+    \end{center}
+    \vspace{5pt}
+  \end{minipage}%
+}
+
+\vspace{10pt}
+
+% BODY: LEFT sidebar + RIGHT main
+\noindent
+\begin{minipage}[t]{0.33\textwidth}
+\vspace{0pt}
+\begin{adjustwidth}{0.35cm}{0.20cm}
+
+\section*{Summary}
+{\small {{SUMMARY}}}
+
+\vspace{5pt}
+
+\section*{Technical Skills}
+{{SKILLS_BLOCK}}
+
+\vspace{5pt}
+
+\section*{Education}
+{{EDUCATION_BLOCK}}
+
+\vspace{5pt}
+
+\section*{Certifications}
+\begin{itemize}[leftmargin=1.0em, label={\textcolor{accent}{\tiny$\blacksquare$}}, itemsep=4pt]
+    \small
+    {{CERTIFICATIONS_BLOCK}}
+\end{itemize}
+
+\end{adjustwidth}
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.64\textwidth}
+\vspace{0pt}
+\begin{adjustwidth}{0.20cm}{0.35cm}
+
+\section*{{{EXPERIENCE_SECTION_TITLE}}}
+{{EXPERIENCE_BLOCK}}
+
+\vspace{8pt}
+
+\section*{Projects}
+{{PROJECTS_BLOCK}}
+
+\end{adjustwidth}
+\end{minipage}
+
+\end{document}

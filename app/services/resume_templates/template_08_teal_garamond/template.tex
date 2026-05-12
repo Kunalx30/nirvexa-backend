@@ -1,0 +1,125 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[
+    ignoreheadfoot,
+    top=1.0cm,
+    bottom=1.0cm,
+    left=1.8cm,
+    right=1.8cm,
+]{geometry}
+\usepackage{titlesec}
+\usepackage[dvipsnames]{xcolor}
+\definecolor{accentColor}{RGB}{0, 105, 105}
+\definecolor{primaryColor}{RGB}{0,0,0}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    colorlinks=true,
+    urlcolor=accentColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{iftex}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{lmodern}
+
+\raggedright
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+
+\titleformat{\section}
+    {\needspace{4\baselineskip}\bfseries\large\color{accentColor}}
+    {}{0pt}{}
+    [\vspace{1pt}{\color{accentColor}\titlerule}]
+\titlespacing{\section}{0pt}{0.25cm}{0.15cm}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\small$\bullet$}}$}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=12pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.05cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0.00001cm}{0.00001cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 4.2cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft \secondColumn
+    \end{paracol}
+    \endonecolentry
+}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+    % HEADER
+    {\centering
+        {\fontsize{24pt}{24pt}\selectfont\textbf{\textcolor{accentColor}{{{FULL_NAME}}}}}\\[4pt]
+        \normalsize
+        {{LOCATION}} \quad\textcolor{accentColor}{|}\quad
+        \hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}} \quad\textcolor{accentColor}{|}\quad
+        \hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}} \quad\textcolor{accentColor}{|}\quad
+        \hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn}{{PORTFOLIO_CENTER_COLOR}}
+    \par}
+    \vspace{6pt}
+
+    \section{Summary}
+    \begin{onecolentry}
+        {{SUMMARY}}
+    \end{onecolentry}
+
+    \section{Technical Skills}
+    \begin{onecolentry}
+        {{SKILLS_BLOCK}}
+    \end{onecolentry}
+
+    \section{Education}
+    \begin{onecolentry}
+        {{EDUCATION_BLOCK}}
+    \end{onecolentry}
+
+    \section{{{EXPERIENCE_SECTION_TITLE}}}
+    \begin{onecolentry}
+        {{EXPERIENCE_BLOCK}}
+    \end{onecolentry}
+
+    \section{Projects}
+    \begin{onecolentry}
+        {{PROJECTS_BLOCK}}
+    \end{onecolentry}
+
+    \section{Certifications}
+    \begin{onecolentry}
+        \begin{highlightsforbulletentries}
+            {{CERTIFICATIONS_BLOCK}}
+        \end{highlightsforbulletentries}
+    \end{onecolentry}
+
+\end{document}
