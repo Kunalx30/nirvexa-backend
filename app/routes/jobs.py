@@ -1,12 +1,11 @@
 """
 app/routes/jobs.py
-NirVexa — Phase 5.6 + 5.7: Full Jobs API with FAISS Semantic Search
-Kunal Chandelkar | April 2026
+NirVexa Jobs API with FAISS Semantic Search
 """
 
 import logging
 import os
-import re
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, current_app, g
 from sqlalchemy import or_
@@ -24,10 +23,28 @@ from app.services.rag_pipeline import (
 from app.middleware.auth_middleware import token_required
 
 logger = logging.getLogger(__name__)
-jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
+jobs_bp = Blueprint("jobs", __name__)
 
 
-# ── Helpers ───────────────────────────────────────────────────────
+JOB_TYPE_ALIASES = {
+    "full-time": ["fulltime", "full-time", "full time", "full_time"],
+    "fulltime": ["fulltime", "full-time", "full time", "full_time"],
+    "full time": ["fulltime", "full-time", "full time", "full_time"],
+    "contract": ["contract", "contractor", "contractual"],
+    "contractor": ["contract", "contractor", "contractual"],
+    "internship": ["internship", "intern", "trainee"],
+    "intern": ["internship", "intern", "trainee"],
+    "remote": ["remote"],
+    "freelance": ["freelance", "freelancer"],
+    "part-time": ["parttime", "part-time", "part time", "part_time"],
+    "parttime": ["parttime", "part-time", "part time", "part_time"],
+}
+
+
+def _job_type_terms(value: str) -> list[str]:
+    key = (value or "").strip().lower()
+    return JOB_TYPE_ALIASES.get(key, [key] if key else [])
+
 
 def _serialize_job(job: Job, include_description: bool = False) -> dict:
     data = {
@@ -40,6 +57,7 @@ def _serialize_job(job: Job, include_description: bool = False) -> dict:
         "source":      job.source,
         "job_type":    job.job_type,
         "apply_url":   job.apply_url,
+        "is_fresher":  job.is_fresher or False,
         "posted_at":   job.posted_at.isoformat() if job.posted_at else None,
         "expires_at":  job.expires_at.isoformat() if job.expires_at else None,
         "ai_summary":  job.ai_summary,
@@ -58,8 +76,8 @@ def _generate_ai_summary(job: Job) -> str | None:
         if not api_key:
             return None
         prompt = (
-            f"Summarize this job in exactly 3 short sentences for a job seeker. "
-            f"Cover: what the role involves, key skills needed, and one reason it's a good opportunity.\n\n"
+            "Summarize this job in exactly 3 short sentences for a job seeker. "
+            "Cover: what the role involves, key skills needed, and one reason it's a good opportunity.\n\n"
             f"Job: {job.title} at {job.company} in {job.location}\n"
             f"Skills: {', '.join(job.skills or [])}\n"
             f"Description: {(job.description or '')[:500]}"
@@ -74,17 +92,19 @@ def _generate_ai_summary(job: Job) -> str | None:
         return None
 
 
-# ── GET /api/jobs ─────────────────────────────────────────────────
-
 @jobs_bp.route("", methods=["GET"])
 def get_jobs():
-    q        = request.args.get("q", "").strip()
-    location = request.args.get("location", "").strip()
-    job_type = request.args.get("type", "").strip()
-    source   = request.args.get("source", "").strip()
-    page     = max(1, int(request.args.get("page", 1)))
-    limit    = min(50, max(1, int(request.args.get("limit", 20))))
-    offset   = (page - 1) * limit
+    q            = request.args.get("q", "").strip()
+    location     = request.args.get("location", "").strip()
+    company      = request.args.get("company", "").strip()
+    skills       = request.args.get("skills", "").strip()
+    job_type     = request.args.get("type", "").strip()
+    source       = request.args.get("source", "").strip()
+    posted_within = request.args.get("posted_within", "").strip()
+    fresher_only = request.args.get("fresher", "").strip().lower()
+    page         = max(1, int(request.args.get("page", 1)))
+    limit        = min(50, max(1, int(request.args.get("limit", 20))))
+    offset       = (page - 1) * limit
 
     faiss_ids = []
 
@@ -96,30 +116,65 @@ def get_jobs():
                 Job.is_active == True,
             )
         else:
-            logger.info("[Jobs] FAISS returned empty — falling back to SQL ILIKE for q='%s'", q)
+            logger.info("[Jobs] FAISS returned empty - falling back to SQL ILIKE for q='%s'", q)
             base_query = Job.query.filter(
                 Job.is_active == True,
                 or_(
                     Job.title.ilike(f"%{q}%"),
                     Job.company.ilike(f"%{q}%"),
                     Job.description.ilike(f"%{q}%"),
-                )
+                ),
             )
     else:
         base_query = Job.query.filter(Job.is_active == True)
 
     if location:
         base_query = base_query.filter(Job.location.ilike(f"%{location}%"))
+    if company:
+        base_query = base_query.filter(Job.company.ilike(f"%{company}%"))
+    if skills:
+        skill_terms = [skill.strip().lower() for skill in skills.split(",") if skill.strip()]
+        for term in skill_terms:
+            base_query = base_query.filter(Job.skills.any(term))
+    if posted_within:
+        try:
+            days = int(posted_within)
+            if days > 0:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+                base_query = base_query.filter(Job.posted_at >= cutoff)
+        except ValueError:
+            pass
     if job_type:
-        base_query = base_query.filter(Job.job_type.ilike(f"%{job_type}%"))
+        terms = []
+        for part in job_type.split(","):
+            terms.extend(_job_type_terms(part.strip()))
+        terms = [term for term in terms if term]
+        if terms:
+            type_conditions = [Job.job_type.ilike(f"%{term}%") for term in terms]
+            if any(term in {"contract", "contractor", "contractual"} for term in terms):
+                type_conditions.extend([
+                    Job.title.ilike("%contract%"),
+                    Job.description.ilike("%contract%"),
+                ])
+            base_query = base_query.filter(or_(*type_conditions))
+
+    if fresher_only in {"true", "1", "yes"}:
+        base_query = base_query.filter(Job.is_fresher == True)
+
     if source:
-        base_query = base_query.filter(Job.source == source)
+        sources = [src.strip().lower() for src in source.split(",") if src.strip()]
+        if sources:
+            from sqlalchemy import func
+            if len(sources) == 1:
+                base_query = base_query.filter(func.lower(Job.source) == sources[0])
+            else:
+                base_query = base_query.filter(func.lower(Job.source).in_(sources))
 
     if q and faiss_ids:
         from sqlalchemy import case
         order_map = case(
             {job_id: pos for pos, job_id in enumerate(faiss_ids)},
-            value=Job.id
+            value=Job.id,
         )
         base_query = base_query.order_by(order_map)
     else:
@@ -138,7 +193,19 @@ def get_jobs():
     }), 200
 
 
-# ── GET /api/jobs/<job_id> ────────────────────────────────────────
+@jobs_bp.route("/filters/options", methods=["GET"])
+def get_filter_options():
+    sources = db.session.query(Job.source).filter(Job.is_active == True, Job.source != None).distinct().all()
+    source_list = sorted(list({s[0].strip() for s in sources if s[0] and s[0].strip()}))
+
+    types = db.session.query(Job.job_type).filter(Job.is_active == True, Job.job_type != None).distinct().all()
+    type_list = sorted(list({t[0].strip() for t in types if t[0] and t[0].strip()}))
+
+    return jsonify({
+        "sources": source_list,
+        "types":   type_list,
+    }), 200
+
 
 @jobs_bp.route("/<job_id>", methods=["GET"])
 def get_job(job_id):
@@ -146,8 +213,6 @@ def get_job(job_id):
     _generate_ai_summary(job)
     return jsonify(_serialize_job(job, include_description=True)), 200
 
-
-# ── POST /api/jobs/match ──────────────────────────────────────────
 
 @jobs_bp.route("/match", methods=["POST"])
 @token_required
@@ -182,7 +247,6 @@ def match_jobs():
 
     return jsonify({"matches": results, "skills_used": skills}), 200
 
-# ── Saved Jobs ────────────────────────────────────────────────────
 
 @jobs_bp.route("/saved", methods=["GET"])
 @token_required
@@ -253,8 +317,6 @@ def delete_saved_job(saved_job_id):
     return jsonify({"message": "Removed from saved jobs"}), 200
 
 
-# ── Job Alerts ────────────────────────────────────────────────────
-
 @jobs_bp.route("/alerts", methods=["POST"])
 @token_required
 def create_alert():
@@ -267,10 +329,10 @@ def create_alert():
         return jsonify({"error": "keywords required"}), 400
 
     alert = JobAlert(
-        user_id   = g.user_id,
-        keywords  = keywords if isinstance(keywords, list) else [keywords],
-        location  = location,
-        frequency = frequency,
+        user_id=g.user_id,
+        keywords=keywords if isinstance(keywords, list) else [keywords],
+        location=location,
+        frequency=frequency,
     )
     db.session.add(alert)
     db.session.commit()
@@ -303,8 +365,6 @@ def delete_alert(alert_id):
     db.session.commit()
     return jsonify({"message": "Alert deleted"}), 200
 
-
-# ── Admin ─────────────────────────────────────────────────────────
 
 def _check_admin(req) -> bool:
     secret = req.headers.get("X-Admin-Secret", "")

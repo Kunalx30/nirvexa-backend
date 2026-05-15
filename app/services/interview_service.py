@@ -139,27 +139,37 @@ Rules:
 def generate_voice_questions(role: str, mode: str, difficulty: str) -> dict:
     """Generate questions for voice interview. Returns a flat list of question strings."""
 
+    interviewer_style = (
+        "Use the voice of a friendly Indian female HR interviewer named Ananya. "
+        "Keep every question short, simple, natural, and easy to speak aloud. "
+        "The first question must be: Tell me about yourself. "
+    )
+
     mode_prompts = {
         'hr': (
-            f"Generate 10 HR/behavioral interview questions for a {role} role at {difficulty} difficulty. "
+            interviewer_style +
+            f"Generate 12 HR/behavioral interview questions for a {role} role at {difficulty} difficulty. "
             "Focus on: teamwork, leadership, conflict resolution, strengths/weaknesses, career goals. "
             "Tailor to Indian fresher and mid-level interview styles. "
-            "Return ONLY a JSON array of 10 question strings."
+            "Return ONLY a JSON array of 12 question strings."
         ),
         'technical': (
-            f"Generate 10 technical interview questions for a {role} role at {difficulty} difficulty. "
+            interviewer_style +
+            f"Generate 12 technical interview questions for a {role} role at {difficulty} difficulty. "
             "Focus on: core technical concepts, problem-solving, tools, real-world scenarios. "
-            "Return ONLY a JSON array of 10 question strings."
+            "Return ONLY a JSON array of 12 question strings."
         ),
         'stress': (
-            f"Generate 15 rapid-fire short stress interview questions for a {role} role. "
+            interviewer_style +
+            f"Generate 18 rapid-fire short stress interview questions for a {role} role. "
             "Questions should be quick, direct, and slightly challenging. "
-            "Return ONLY a JSON array of 15 question strings."
+            "Return ONLY a JSON array of 18 question strings."
         ),
         'mock': (
+            interviewer_style +
             f"Generate a mock interview for a {role} role at {difficulty} difficulty: "
-            "first 5 HR/behavioral questions, then 5 technical questions. "
-            "Return ONLY a JSON array of 10 question strings in order."
+            "first 6 HR/behavioral questions, then 6 technical questions. "
+            "Return ONLY a JSON array of 12 question strings in order."
         ),
     }
 
@@ -189,6 +199,7 @@ Respond ONLY with a valid JSON array of strings. No preamble, no markdown, no ba
         questions = json.loads(raw)
         if not isinstance(questions, list):
             raise ValueError("Response is not a list")
+        questions = _ensure_self_intro_question(questions)
 
         return {"success": True, "questions": questions}
 
@@ -266,7 +277,14 @@ Scoring rules:
             max_tokens=1200,
             temperature=0.3,
         )
-        result = _parse_json(response)
+        result = _normalize_voice_evaluation(
+            _parse_json(response),
+            wpm=wpm,
+            filler_count=filler_count,
+            transcript=transcript,
+            duration_seconds=duration_seconds,
+            word_count=word_count,
+        )
         return {"success": True, "data": result}
 
     except json.JSONDecodeError as e:
@@ -303,7 +321,8 @@ def create_interview_session(
 
 def finalize_interview_session(
     session_id: str, user_id: str,
-    total_score: float, avg_wpm: float, filler_word_count: int
+    total_score: float, avg_wpm: float, filler_word_count: int,
+    metric_scores: dict | None = None,
 ) -> dict:
     try:
         session = InterviewSession.query.filter_by(id=session_id, user_id=user_id).first()
@@ -313,6 +332,11 @@ def finalize_interview_session(
         session.total_score      = total_score
         session.avg_wpm          = avg_wpm
         session.filler_word_count = filler_word_count
+        metric_scores = metric_scores or {}
+        session.content_score = metric_scores.get("content_score", session.content_score)
+        session.keyword_score = metric_scores.get("keyword_score", session.keyword_score)
+        session.grammar_score = metric_scores.get("grammar_score", session.grammar_score)
+        session.confidence_score = metric_scores.get("confidence_score", session.confidence_score)
         session.status           = 'completed'
         session.completed_at     = datetime.now(timezone.utc)
         db.session.commit()
@@ -400,6 +424,150 @@ def _parse_json(response) -> dict:
     return json.loads(raw.strip())
 
 
+def _ensure_self_intro_question(questions: list) -> list:
+    cleaned = [str(q).strip() for q in questions if str(q).strip()]
+    intro = "Tell me about yourself."
+    if not cleaned:
+        return [intro]
+    first = cleaned[0].lower()
+    if "tell me about yourself" in first or "introduce yourself" in first:
+        cleaned[0] = intro
+        return cleaned
+    return [intro] + cleaned
+
+
+def _clamp_score(value, default=0) -> int:
+    try:
+        score = round(float(value))
+    except (TypeError, ValueError):
+        score = default
+    return max(0, min(100, score))
+
+
+def _pace_score_from_wpm(wpm: int) -> int:
+    if wpm <= 0:
+        return 0
+    if 125 <= wpm <= 165:
+        return 100
+    distance = 125 - wpm if wpm < 125 else wpm - 165
+    return max(25, 100 - round(distance * 1.7))
+
+
+def _pace_label_from_wpm(wpm: int) -> str:
+    if wpm <= 0:
+        return "not measured"
+    if wpm < 105:
+        return "too slow"
+    if wpm < 125:
+        return "slightly slow"
+    if wpm <= 165:
+        return "ideal"
+    if wpm <= 185:
+        return "slightly fast"
+    return "too fast"
+
+
+def _filler_score(filler_count: int, word_count: int) -> int:
+    if word_count <= 0:
+        return 0
+    filler_rate = filler_count / word_count
+    if filler_count == 0:
+        return 100
+    if filler_rate <= 0.02:
+        return 90
+    if filler_rate <= 0.05:
+        return 75
+    if filler_rate <= 0.08:
+        return 60
+    return 40
+
+
+def _completeness_score_from_text(transcript: str) -> int:
+    words = len((transcript or "").split())
+    if words >= 90:
+        return 85
+    if words >= 55:
+        return 72
+    if words >= 30:
+        return 58
+    return 40
+
+
+def _normalize_voice_evaluation(
+    result: dict,
+    wpm: int,
+    filler_count: int,
+    transcript: str,
+    duration_seconds: int,
+    word_count: int,
+) -> dict:
+    """Ensure the frontend always receives all 6 voice metric scores."""
+    result = result if isinstance(result, dict) else {}
+    word_count = word_count or len((transcript or "").split())
+    filler_score = _filler_score(filler_count, word_count)
+    defaults = {
+        "content_score": 60,
+        "keyword_score": 55,
+        "grammar_score": 65,
+        "confidence_score": max(35, round((80 - (filler_count * 4) + filler_score) / 2)),
+        "pace_score": _pace_score_from_wpm(wpm),
+        "completeness_score": _completeness_score_from_text(transcript),
+    }
+
+    for key, default in defaults.items():
+        result[key] = _clamp_score(result.get(key), default)
+
+    weighted = (
+        result["content_score"] * 0.30
+        + result["keyword_score"] * 0.20
+        + result["grammar_score"] * 0.15
+        + result["confidence_score"] * 0.15
+        + result["pace_score"] * 0.10
+        + result["completeness_score"] * 0.10
+    )
+    result["overall_score"] = _clamp_score(result.get("overall_score"), round(weighted))
+
+    overall = result["overall_score"]
+    result["grade"] = result.get("grade") or (
+        "A+" if overall >= 95 else
+        "A" if overall >= 90 else
+        "B+" if overall >= 80 else
+        "B" if overall >= 70 else
+        "C" if overall >= 60 else
+        "D"
+    )
+    result["verdict"] = result.get("verdict") or (
+        "Strong" if overall >= 80 else "Acceptable" if overall >= 60 else "Needs Work"
+    )
+    result["keywords_found"] = result.get("keywords_found") or []
+    result["keywords_missing"] = result.get("keywords_missing") or []
+    result["feedback"] = result.get("feedback") or "Your answer was captured and scored. Add one clear example and a short conclusion to make it stronger."
+    result["suggested_answer"] = result.get("suggested_answer") or "A strong answer should briefly explain the situation, your action, and the result. Keep it specific to the role and end with what you learned."
+    result["strengths"] = result.get("strengths") or []
+    result["improvements"] = result.get("improvements") or []
+    pace_label = _pace_label_from_wpm(wpm)
+    result["pace_feedback"] = (
+        f"Measured pace: {wpm} WPM, which is {pace_label}. "
+        "Aim for 125-165 WPM in interview answers."
+    )
+    result["filler_feedback"] = (
+        f"Detected {filler_count} filler word{'s' if filler_count != 1 else ''}. "
+        f"Filler score: {filler_score}/100."
+    )
+    result["measured_metrics"] = {
+        "word_count": word_count,
+        "duration_seconds": duration_seconds,
+        "wpm": wpm,
+        "ideal_wpm_min": 125,
+        "ideal_wpm_max": 165,
+        "pace_label": pace_label,
+        "filler_count": filler_count,
+        "filler_rate_percent": round((filler_count / word_count) * 100, 1) if word_count else 0,
+        "filler_score": filler_score,
+    }
+    return result
+
+
 def _serialize_session(s) -> dict:
     return {
         "id":               s.id,
@@ -408,6 +576,10 @@ def _serialize_session(s) -> dict:
         "difficulty":       getattr(s, 'difficulty', None),
         "question_count":   s.total_questions,
         "total_score":      s.total_score,
+        "content_score":    getattr(s, "content_score", None),
+        "keyword_score":    getattr(s, "keyword_score", None),
+        "grammar_score":    getattr(s, "grammar_score", None),
+        "confidence_score": getattr(s, "confidence_score", None),
         "avg_wpm":          s.avg_wpm,
         "filler_word_count": s.filler_word_count,
         "status":           s.status,

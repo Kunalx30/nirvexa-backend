@@ -179,3 +179,7 @@ feedparser
 # Resume 
 boto3
 pdfplumber
+
+
+#for interview Voice
+elevenlabs

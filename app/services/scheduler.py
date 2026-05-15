@@ -1,4 +1,5 @@
 import logging
+import os
 import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -9,45 +10,67 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 
-_app = None   # stored at init time so the pipeline thread can use it
+_app = None
 
 
 def run_daily_job_pipeline():
     """
-    Runs all scrapers in parallel, inserts results to DB, 
+    Runs all scrapers in parallel, inserts results to DB,
     rebuilds FAISS index, and sends user alerts.
     Triggered daily at 2AM IST (20:30 UTC).
     """
+    from app.services.job_inserter import insert_jobs
     from app.services.job_scraper import (
         scrape_remotive,
         scrape_github_jobs,
         scrape_internshala,
-        scrape_greenhouse_companies,
         scrape_lever_companies,
         scrape_indian_startups_greenhouse,
         scrape_indian_startups_lever,
         scrape_jsearch_india,
+        scrape_remoteok,
+        scrape_weworkremotely,
+        scrape_workingnomads,
+        scrape_himalayas,
+        scrape_adzuna_by_city,
+        scrape_adzuna_by_role,
+         scrape_freshersworld,
+        scrape_foundit_freshers,
+        scrape_greenhouse_fresher_companies,
+        scrape_wellfound_freshers,
     )
-    from app.services.job_inserter import insert_jobs
 
-    # Removed Arbeitnow due to 403 Forbidden errors
     scrapers = {
-        'remotive':          scrape_remotive,
-        'github_jobs':       scrape_github_jobs,
-        'internshala':       scrape_internshala,
-        'greenhouse_global': scrape_greenhouse_companies,
-        'lever_global':      scrape_lever_companies,
-        'greenhouse_india':  scrape_indian_startups_greenhouse,
-        'lever_india':       scrape_indian_startups_lever,
-        'jsearch':           scrape_jsearch_india,
+        'remotive':         scrape_remotive,
+        'arbeitnow':        scrape_github_jobs,
+        'internshala':      scrape_internshala,
+        'lever_global':     scrape_lever_companies,
+        'greenhouse_india': scrape_indian_startups_greenhouse,
+        'lever_india':      scrape_indian_startups_lever,
+        'remoteok':         scrape_remoteok,
+        'weworkremotely':   scrape_weworkremotely,
+        'workingnomads':    scrape_workingnomads,
+        'himalayas':        scrape_himalayas,
+         'freshersworld':        scrape_freshersworld,
+        'foundit':              scrape_foundit_freshers,
+        'greenhouse_freshers':  scrape_greenhouse_fresher_companies,
+        'wellfound':            scrape_wellfound_freshers,
+
     }
+
+    if os.getenv('RAPIDAPI_KEY'):
+        scrapers['jsearch'] = scrape_jsearch_india
+
+    if os.getenv('ADZUNA_APP_ID') and os.getenv('ADZUNA_APP_KEY'):
+        scrapers['adzuna_city'] = scrape_adzuna_by_city
+        scrapers['adzuna_role'] = scrape_adzuna_by_role
 
     logger.info("=== Daily Job Pipeline Started ===")
 
     # ── Step 1: Scrape all sources in parallel ────────────────────────────────
     all_jobs_by_source = {}
-    newly_fetched_jobs = []  # To pass to the alert system
-    
+    newly_fetched_jobs = []
+
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_source = {
             executor.submit(fn): source
@@ -97,13 +120,13 @@ def run_daily_job_pipeline():
         total_inserted, total_skipped, total_errors
     )
 
-    # ── Step 3: Rebuild FAISS index in background ─────────────────────────────
-    logger.info("[Scheduler] Triggering FAISS rebuild in background...")
+    # ── Step 3: Rebuild FAISS index ───────────────────────────────────────────
+    logger.info("[Scheduler] Triggering FAISS rebuild...")
     try:
         from app.services.rag_pipeline import rebuild_index
         rebuild_index(app=_app)
     except Exception as e:
-        logger.error("[Scheduler] FAISS rebuild trigger failed: %s", e)
+        logger.error("[Scheduler] FAISS rebuild failed: %s", e)
 
     # ── Step 4: Send Job Alerts ───────────────────────────────────────────────
     if total_inserted > 0:
@@ -119,7 +142,7 @@ def _send_job_alerts(new_jobs: list):
     from app.models.user import User
     from app.services.email_service import send_job_alert
     from datetime import datetime, timezone
-    
+
     if not _app:
         return
 
@@ -132,7 +155,6 @@ def _send_job_alerts(new_jobs: list):
             if not keywords:
                 continue
 
-            # Match jobs where any keyword appears in title or skills
             matched = []
             for job in new_jobs:
                 title = (job.get("title") or "").lower()
@@ -149,12 +171,10 @@ def _send_job_alerts(new_jobs: list):
             if not matched:
                 continue
 
-            # Get user email
             user = User.query.filter_by(id=alert.user_id).first()
             if not user or not user.email:
                 continue
 
-            # Send Email
             sent = send_job_alert(user.email, user.name, matched)
             if sent:
                 alert.last_sent_at = datetime.now(timezone.utc)
@@ -184,6 +204,36 @@ def run_news_pipeline():
         if ctx:
             ctx.pop()
 
+
+def run_cleanup():
+    """Delete jobs older than 30 days every night."""
+    from app.models.job import Job
+    from app.models.saved_job import SavedJob
+    from app.database.db import db
+    from datetime import datetime, timedelta, timezone
+
+    with _app.app_context():
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        # Get IDs of old jobs NOT saved by any user
+        old_jobs = (
+            Job.query
+            .filter(Job.posted_at < cutoff)
+            .outerjoin(SavedJob, Job.id == SavedJob.job_id)
+            .filter(SavedJob.job_id == None)
+            .all()
+        )
+
+        if not old_jobs:
+            logger.info("[Cleanup] No old unsaved jobs to delete.")
+            return
+
+        old_ids = [j.id for j in old_jobs]
+        Job.query.filter(Job.id.in_(old_ids)).delete(synchronize_session=False)
+        db.session.commit()
+        logger.info(f"[Cleanup] Deleted {len(old_ids)} jobs older than 30 days (saved jobs preserved).")
+
+
 def init_scheduler(app):
     """Call this from create_app() to start the scheduler."""
     global _app
@@ -198,13 +248,21 @@ def init_scheduler(app):
         misfire_grace_time=3600,
     )
 
-    # News refresh every 4 hours
+    # 2:30AM IST = 21:00 UTC
     scheduler.add_job(
-    run_news_pipeline,
-    IntervalTrigger(hours=4),
-    id='news_refresh_pipeline',
-    replace_existing=True,
-    misfire_grace_time=600,
+        run_cleanup,
+        CronTrigger(hour=21, minute=0, timezone=pytz.utc),id='nightly_cleanup',
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    # News every 4 hours
+    scheduler.add_job(
+        run_news_pipeline,
+        IntervalTrigger(hours=4),
+        id='news_refresh_pipeline',
+        replace_existing=True,
+        misfire_grace_time=600,
     )
 
     scheduler.start()

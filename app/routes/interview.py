@@ -3,8 +3,10 @@ app/routes/interview.py
 NirVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI
 """
 import logging
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, jsonify, request, send_file, g
 from app.middleware.auth_middleware import token_required
+import io
+from app.services.tts_service import text_to_speech
 
 logger = logging.getLogger(__name__)
 interview_bp = Blueprint('interview', __name__)
@@ -237,9 +239,12 @@ def complete_session(session_id):
         total_score      = float(data.get('total_score') or 0)
         avg_wpm          = float(data.get('avg_wpm') or 0)
         filler_word_count = int(data.get('filler_word_count') or 0)
+        metric_scores = data.get('metric_scores') or {}
 
         from app.services.interview_service import finalize_interview_session
-        result = finalize_interview_session(session_id, g.user_id, total_score, avg_wpm, filler_word_count)
+        result = finalize_interview_session(
+            session_id, g.user_id, total_score, avg_wpm, filler_word_count, metric_scores
+        )
 
         if not result['success']:
             return jsonify({'error': result['error']}), 500
@@ -318,3 +323,37 @@ def delete_session(session_id):
     except Exception as e:
         logger.error("[Interview Route] DELETE /session/%s failed: %s", session_id, e)
         return jsonify({'error': 'Failed to delete session'}), 500
+
+
+# ── TTS ENDPOINT ──────────────────────────────────────────
+@interview_bp.route('/speak', methods=['POST'])
+@token_required
+def speak_question():
+    """
+    Body: { "text": "Tell me about yourself", "voice": "ananya" }
+    Returns: MP3 audio file with Indian English HR voice
+    """
+    data = request.get_json() or {}
+
+    text = data.get('text', '').strip()
+    voice = (data.get('voice') or 'ananya').strip().lower()  # Default to ananya for HR interviews
+
+    if not text:
+        return jsonify({'error': 'text is required'}), 400
+
+    if len(text) > 500:
+        return jsonify({'error': 'Text too long, max 500 chars'}), 400
+
+    try:
+        audio_bytes = text_to_speech(text, voice=voice)
+
+        return send_file(
+            io.BytesIO(audio_bytes),
+            mimetype='audio/mpeg',
+            as_attachment=False,
+            download_name='question.mp3'
+        )
+
+    except Exception as e:
+        logger.error("[Interview Route] POST /speak failed: %s", e)
+        return jsonify({'error': 'Failed to generate speech'}), 500

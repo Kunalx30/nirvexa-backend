@@ -19,6 +19,12 @@ class ChatMessage(db.Model):
         nullable=False,
         index=True
     )
+    session_id = db.Column(
+        db.String(36),
+        db.ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
     role = db.Column(
         db.String(20),
         nullable=False
@@ -31,10 +37,13 @@ class ChatMessage(db.Model):
         nullable=False
     )
 
+    session = db.relationship("ChatSession", back_populates="messages")
+
     def to_dict(self):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "session_id": self.session_id,
             "role": self.role,
             "content": self.content,
             "model_used": self.model_used,

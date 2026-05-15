@@ -26,7 +26,7 @@ def create_app(env: str = None) -> Flask:
 
     # --- Import ALL Models inside app context ---
     with app.app_context():
-        from app.models import User, ChatMessage, InterviewSession, InterviewResponse  # noqa
+        from app.models import User, ChatSession, ChatMessage, InterviewSession, InterviewResponse  # noqa
         from app.models.job import Job         
         from app.models.news_cache import NewsCache         # noqa
         from app.models.saved_job import SavedJob           # noqa

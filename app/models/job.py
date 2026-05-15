@@ -21,4 +21,5 @@ class Job(db.Model):
     posted_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(days=30))
     is_active = db.Column(db.Boolean, default=True)
+    is_fresher = db.Column(db.Boolean, default=False, index=True)  # ← ADD THIS
     ai_summary = db.Column(db.Text)
