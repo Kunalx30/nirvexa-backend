@@ -54,7 +54,12 @@ The JSON must follow this exact structure:
 
 Rules:
 - Generate 5 to 8 steps
-- Resources must be real: Coursera, YouTube, official docs, freeCodeCamp, Kaggle, etc.
+- For resources, do NOT hallucinate broken direct links. You MUST mix and match EXACT, WORKING search URLs from these reliable, multi-domain platforms:
+  * YouTube Video: "YouTube: https://www.youtube.com/results?search_query=learn+[skill_name]"
+  * Coursera Courses: "Coursera: https://www.coursera.org/search?query=[skill_name]"
+  * Udemy Courses: "Udemy: https://www.udemy.com/courses/search/?q=[skill_name]"
+  * edX Free Courses: "edX: https://www.edx.org/search?q=[skill_name]"
+  * Medium Articles: "Medium: https://medium.com/search?q=[skill_name]"
 - Be specific to Indian job market realities
 - estimated_weeks per step should be realistic (2-8 weeks each)
 - already_have should only include skills from the current_skills list that are relevant to target role
@@ -169,7 +174,12 @@ Analyze the skill gap and respond ONLY with valid JSON. No preamble, no markdown
 Rules:
 - match_percentage must be a realistic integer 0-100
 - recommended_courses must have one entry per priority skill
-- Use only real, working URLs (Coursera, YouTube, Kaggle, official docs)
+- For 'url', do NOT hallucinate direct links (they 404). You MUST use one of these deterministic search formats suitable for ANY domain (Finance, HR, Tech, Design, etc.):
+  * "https://www.youtube.com/results?search_query=[skill_name]+course"
+  * "https://www.coursera.org/search?query=[skill_name]"
+  * "https://www.udemy.com/courses/search/?q=[skill_name]"
+  * "https://www.edx.org/search?q=[skill_name]"
+  * "https://medium.com/search?q=[skill_name]"
 - missing_skills should be ordered by importance"""
 
     try:
@@ -234,65 +244,77 @@ def get_company_research(company_name: str) -> dict:
         logger.info("[CompanyResearch] Cache hit for '%s'", company_name)
         return {"success": True, "data": _company_cache[cache_key]}
 
-    prompt = f"""You are a company research expert with deep knowledge of the Indian and global tech job market.
-
+    prompt = f"""You are a brutally honest corporate research aggregator. You pull genuine, unvarnished insights from Glassdoor, AmbitionBox, LeetCode discussions, and Reddit.
+    
 Research this company for a job seeker: {company_name}
 
-Respond ONLY with valid JSON. No preamble, no markdown, no backticks.
+Respond ONLY with valid JSON. No preamble, no markdown.
 
 {{
-  "summary": "2-3 sentence overview of what the company does",
+  "summary": "2-3 sentence overview of what the company actually does and how they make money",
   "industry": "primary industry",
   "founded": "year founded",
   "headquarters": "city, country",
-  "india_presence": "description of their India offices/teams or 'No India presence'",
-  "tech_stack": ["technology 1", "technology 2", "technology 3"],
-  "culture_notes": "2 sentences about work culture, values, work-life balance",
-  "hiring_process": "typical hiring process steps for this company",
+  "india_presence": "description of their India offices/teams",
+  "who_they_hire": "genuine insight: do they hire from tier-1 colleges? freshers vs experienced? off-campus drives?",
+  "top_departments": ["Engineering", "Sales", "Data", "etc"],
+  "tech_stack": ["skill 1", "skill 2", "tech 1", "tech 2"],
+  "culture_notes": "brutally honest culture review (is it toxic? good work-life balance? micro-management? fast-paced?)",
+  "interview_type": "LeetCode heavy? Behavioral heavy? Take-home assignments? Domain-specific?",
+  "hiring_process": "detailed steps: how many rounds, what happens in each round",
   "interview_tips": [
-    "specific tip 1 for interviewing at this company",
-    "specific tip 2",
-    "specific tip 3"
+    "highly specific tip 1 (e.g., focus on dynamic programming)",
+    "highly specific tip 2",
+    "highly specific tip 3"
   ],
   "common_interview_questions": [
-    "example question they commonly ask",
-    "example question 2"
+    "genuine technical or behavioral question they ask",
+    "genuine question 2"
   ],
-  "glassdoor_rating": 4.1,
-  "avg_salary_india_lpa": "range like 12-25 LPA or 'Not available'",
-  "pros": ["pro 1", "pro 2", "pro 3"],
-  "cons": ["con 1", "con 2"]
+  "glassdoor_rating": <float, genuine rating or realistic estimate>,
+  "avg_salary_india_lpa": "realistic range (e.g. 15-25 LPA)",
+  "pros": ["genuine pro 1", "genuine pro 2", "genuine pro 3"],
+  "cons": ["genuine con 1 (e.g. slow promotions)", "genuine con 2"]
 }}
 
 Rules:
-- glassdoor_rating must be a realistic float between 1.0 and 5.0, or null if unknown
-- tech_stack must be real technologies this company actually uses
-- interview_tips must be specific to this company, not generic advice
-- If company is unknown or very obscure, still return best-effort data with honest uncertainty"""
+- DO NOT sugarcoat. If a company is known for bad work-life balance, say it in culture_notes or cons.
+- glassdoor_rating must be a float.
+- key_skills_and_tech_stack must include both tools (e.g. React) and skills (e.g. B2B Sales) based on their departments.
+- If company is unknown, provide best-effort realistic estimates based on their sector and size."""
 
     try:
-        client = openai.OpenAI(
-            api_key=current_app.config["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com",
-            timeout=60.0
-        )
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            max_tokens=1024,
-            temperature=0.3,
-        )
+        try:
+            client = openai.OpenAI(
+                api_key=current_app.config["DEEPSEEK_API_KEY"],
+                base_url="https://api.deepseek.com",
+                timeout=60.0
+            )
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1024,
+                temperature=0.3,
+            )
+            raw = response.choices[0].message.content.strip()
+        except Exception as ds_err:
+            logger.warning("[CompanyResearch] DeepSeek failed, trying Groq fallback: %s", ds_err)
+            import groq
+            groq_client = groq.Groq(api_key=current_app.config.get("GROQ_API_KEY", ""))
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1024,
+                temperature=0.3,
+            )
+            raw = response.choices[0].message.content.strip()
 
-        raw = response.choices[0].message.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):

@@ -187,47 +187,55 @@ Provide realistic salary insights for: {role} in {location_str}
 Respond ONLY with valid JSON. No preamble, no markdown, no backticks.
 
 {{
-  "min_salary_lpa": 6.0,
-  "max_salary_lpa": 18.0,
-  "avg_salary_lpa": 11.0,
-  "median_lpa": 10.0,
-  "fresher_lpa": 4.5,
-  "experienced_lpa": 20.0,
-  "top_paying_companies": ["Company A", "Company B", "Company C"],
-  "salary_factors": ["factor that increases salary 1", "factor 2"],
+  "min_salary_lpa": <float, lowest realistic salary>,
+  "max_salary_lpa": <float, highest realistic salary>,
+  "avg_salary_lpa": <float, average salary>,
+  "median_lpa": <float, median salary>,
+  "fresher_lpa": <float, starting salary for 0-1 years>,
+  "experienced_lpa": <float, salary for 5+ years>,
+  "top_paying_companies": ["Company 1", "Company 2", "Company 3"],
+  "salary_factors": ["factor 1", "factor 2"],
   "market_demand": "high | medium | low",
   "note": "one sentence about salary trend for this role in India"
 }}
 
 Rules:
-- All salary values must be realistic LPA figures for Indian market
-- fresher_lpa = typical starting salary for 0-1 year experience
-- experienced_lpa = typical salary for 5+ years experience
-- top_paying_companies must be real companies hiring for this role in India"""
+- You MUST provide highly specific, varying, and realistic salary numbers for this exact role. Do NOT give generic safe numbers.
+- All salary values must be realistic LPA (Lakhs Per Annum) figures for the Indian market.
+- top_paying_companies must be real companies hiring for this role in India."""
 
         try:
-            client = openai.OpenAI(
-                api_key=current_app.config["DEEPSEEK_API_KEY"],
-                base_url="https://api.deepseek.com/v1",
-                timeout=60.0
-            )
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a salary expert. Always respond with valid JSON only. No markdown, no backticks."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=512,
-                temperature=0.2,
-            )
+            try:
+                client = openai.OpenAI(
+                    api_key=current_app.config["DEEPSEEK_API_KEY"],
+                    base_url="https://api.deepseek.com",
+                    timeout=60.0
+                )
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": "You are a salary expert. Always respond with valid JSON only. No markdown, no backticks."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=512,
+                    temperature=0.2,
+                )
+                raw = response.choices[0].message.content.strip()
+            except Exception as e:
+                logger.warning(f"[SalaryInsights] DeepSeek failed, trying Groq fallback: {e}")
+                import groq
+                groq_client = groq.Groq(api_key=current_app.config.get("GROQ_API_KEY", ""))
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "You are a salary expert. Always respond with valid JSON only. No markdown, no backticks."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=512,
+                    temperature=0.2,
+                )
+                raw = response.choices[0].message.content.strip()
 
-            raw = response.choices[0].message.content.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
