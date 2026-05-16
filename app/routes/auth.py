@@ -86,6 +86,11 @@ def register():
 
     db.session.commit()
 
+
+    # Send welcome email
+    from app.services.email_service import send_welcome_email
+    send_welcome_email(new_user.email, new_user.name)
+
     return success_response(
         data={
             "user": new_user.to_dict(),
@@ -206,11 +211,14 @@ def google_login():
                 email=email,
                 google_id=google_id,
                 avatar_url=avatar_url,
-                is_verified=True,  # Google emails are verified
+                is_verified=True,
             )
             db.session.add(user)
             db.session.flush()
 
+            # Send welcome email for new Google signups
+            from app.services.email_service import send_welcome_email
+            send_welcome_email(user.email, user.name)
     if not user.is_active:
         return error_response("This account has been deactivated", 403)
 

@@ -91,12 +91,12 @@ def create_app(env: str = None) -> Flask:
     def health_check():
         return jsonify({
             "status": "healthy",
-            "app": app.config.get("APP_NAME", "NirVexa"),
+            "app": app.config.get("APP_NAME", "NyrVexa"),
             "version": app.config.get("APP_VERSION", "1.0.0"),
             "environment": env,
         }), 200
 
-    app.logger.info(f"NirVexa backend started in [{env}] mode")
+    app.logger.info(f"NyrVexa backend started in [{env}] mode")
     return app
 
 

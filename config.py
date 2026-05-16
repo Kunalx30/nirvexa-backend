@@ -11,7 +11,7 @@ class Config:
     """Base configuration — shared across all environments."""
 
     # App
-    APP_NAME = os.getenv("APP_NAME", "NirVexa")
+    APP_NAME = os.getenv("APP_NAME", "NyrVexa")
     APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
     SECRET_KEY = os.getenv("SECRET_KEY")
 

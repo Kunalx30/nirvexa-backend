@@ -1,14 +1,14 @@
 """
 app/services/email_service.py
-NirVexa — Emails via Brevo
+NyrVexa — Emails via Brevo
 """
 import os, logging, requests
 
 logger = logging.getLogger(__name__)
 
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
-FROM_EMAIL    = "nirvexa.ai@gmail.com"
-FROM_NAME     = "NirVexa"
+FROM_EMAIL    = "team@nyrvexa.in"
+FROM_NAME     = "NyrVexa"
 
 
 def _send(to_email: str, to_name: str, subject: str, html: str) -> bool:
@@ -35,13 +35,50 @@ def _send(to_email: str, to_name: str, subject: str, html: str) -> bool:
         return False
 
 
+def send_welcome_email(user_email: str, user_name: str) -> bool:
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1a1a1a;">
+        <div style="text-align:center;margin-bottom:24px;">
+            <h1 style="color:#6c63ff;">NyrVexa</h1>
+            <p style="color:#777;font-size:14px;">Your AI Career Assistant</p>
+        </div>
+        <h2 style="font-size:18px;">Welcome, {user_name}! 🎉</h2>
+        <p style="color:#555;font-size:14px;margin-bottom:16px;">
+            You're now part of NyrVexa — India's AI-powered career platform built for students and professionals.
+        </p>
+        <p style="color:#555;font-size:14px;margin-bottom:24px;">Here's what you can do:</p>
+        <ul style="color:#555;font-size:14px;margin-bottom:24px;line-height:2;">
+            <li>🤖 Chat with our AI career assistant</li>
+            <li>📄 Analyze and improve your resume</li>
+            <li>💼 Browse 600+ real job listings</li>
+            <li>🎤 Practice voice interviews with AI scoring</li>
+            <li>📊 Get personalized skill gap analysis</li>
+        </ul>
+        <div style="text-align:center;margin-bottom:32px;">
+            <a href="https://www.nyrvexa.in"
+               style="background:#6c63ff;color:#fff;padding:12px 32px;border-radius:8px;
+                      text-decoration:none;font-size:15px;font-weight:bold;">
+               Go to NyrVexa
+            </a>
+        </div>
+        <p style="color:#aaa;font-size:13px;text-align:center;">
+            Questions? Reply to this email or reach us at team@nyrvexa.in
+        </p>
+    </body>
+    </html>
+    """
+    return _send(user_email, user_name, "Welcome to NyrVexa 🚀", html)
+
+
 def send_password_reset(user_email: str, user_name: str, reset_url: str) -> bool:
     html = f"""
     <!DOCTYPE html>
     <html>
     <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1a1a1a;">
         <div style="text-align:center;margin-bottom:24px;">
-            <h1 style="color:#6c63ff;">NirVexa</h1>
+            <h1 style="color:#6c63ff;">NyrVexa</h1>
             <p style="color:#777;font-size:14px;">Your AI Career Assistant</p>
         </div>
         <h2 style="font-size:18px;">Hi {user_name}, reset your password</h2>
@@ -56,10 +93,11 @@ def send_password_reset(user_email: str, user_name: str, reset_url: str) -> bool
             </a>
         </div>
         <p style="color:#aaa;font-size:13px;">If you didn't request this, ignore this email.</p>
+        <p style="color:#aaa;font-size:13px;text-align:center;">— team@nyrvexa.in</p>
     </body>
     </html>
     """
-    return _send(user_email, user_name, "NirVexa — Reset your password", html)
+    return _send(user_email, user_name, "NyrVexa — Reset your password", html)
 
 
 def send_job_alert(user_email: str, user_name: str, jobs: list) -> bool:
@@ -87,7 +125,7 @@ def send_job_alert(user_email: str, user_name: str, jobs: list) -> bool:
     <html>
     <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1a1a1a;">
         <div style="text-align:center;margin-bottom:24px;">
-            <h1 style="color:#6c63ff;">NirVexa</h1>
+            <h1 style="color:#6c63ff;">NyrVexa</h1>
         </div>
         <h2>Hi {user_name}, here are your new job matches!</h2>
         <p style="color:#555;font-size:14px;margin-bottom:24px;">
@@ -95,11 +133,12 @@ def send_job_alert(user_email: str, user_name: str, jobs: list) -> bool:
         </p>
         {job_cards}
         <p style="color:#aaa;font-size:12px;text-align:center;margin-top:32px;">
-            Manage your alerts by logging into NirVexa.
+            Manage your alerts by logging into <a href="https://www.nyrvexa.in" style="color:#6c63ff;">NyrVexa</a>
+            or reach us at team@nyrvexa.in
         </p>
     </body>
     </html>
     """
 
-    subject = f"NirVexa — {len(jobs)} new job{'s' if len(jobs) > 1 else ''} matching your alert"
+    subject = f"NyrVexa — {len(jobs)} new job{'s' if len(jobs) > 1 else ''} matching your alert"
     return _send(user_email, user_name, subject, html)
