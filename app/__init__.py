@@ -42,21 +42,23 @@ def create_app(env: str = None) -> Flask:
     # Using resources dict so Flask-CORS applies headers on EVERY route
     # including preflight OPTIONS requests for PUT / DELETE
     CORS(
-        app,
-        resources={r"/api/*": {
-            "origins": [
-                # Web - production
-                "https://nirvexa-frontend.vercel.app",
-                # Web - local dev (all common Vite ports)
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:3000",
-                # Android emulator hits 10.0.2.2 for host machine localhost
-                "http://10.0.2.2",
-                "http://10.0.2.2:5000",
-                # Allow null origin (Android WebView / file:// during dev)
-                "null",
-            ],
+    app,
+    resources={r"/api/*": {
+        "origins": [
+            # Web - production (new domain)
+            "https://nyrvexa.in",
+            "https://www.nyrvexa.in",
+            # Web - production (old domain — keep for safety)
+            "https://nirvexa-frontend.vercel.app",
+            # Web - local dev
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+            # Android emulator
+            "http://10.0.2.2",
+            "http://10.0.2.2:5000",
+            "null",
+        ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
             "allow_headers": [
                 "Content-Type",
