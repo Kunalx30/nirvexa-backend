@@ -165,17 +165,35 @@ def scrape_internshala() -> list[dict]:
                     location = card.select_one('.location_link, .locations')
                     stipend  = card.select_one('.stipend, .salary')
 
-                    # Broader link selector to catch both job and internship detail URLs
-                    link = card.select_one(
-                        'a.view_detail_button, '
-                        'a[href*="/internship/detail"], '
-                        'a[href*="/jobs/detail"]'
-                    )
-
+                    # Fallback chain for links
                     apply_url = ''
+                    
+                    # 1. First try specific selectors
+                    link = card.select_one('a.view_detail_button, a[href*="/internship/detail"], a[href*="/jobs/detail"], a.job-title-href')
                     if link and link.get('href'):
-                        href = link['href']
-                        apply_url = href if href.startswith('http') else base_url + href
+                        apply_url = link['href']
+                    
+                    # 2. Try the title element itself or its children
+                    if not apply_url and title:
+                        if title.name == 'a' and title.get('href'):
+                            apply_url = title['href']
+                        else:
+                            a_tag = title.find('a')
+                            if a_tag and a_tag.get('href'):
+                                apply_url = a_tag['href']
+                                
+                    # 3. Check for data-href on the card
+                    if not apply_url and card.get('data-href'):
+                        apply_url = card.get('data-href')
+                        
+                    # 4. Grab ANY anchor that looks like a detail link
+                    if not apply_url:
+                        any_a = card.select_one('a[href*="/internship/"], a[href*="/job/"]')
+                        if any_a and any_a.get('href'):
+                            apply_url = any_a['href']
+                            
+                    if apply_url:
+                        apply_url = apply_url if apply_url.startswith('http') else base_url + apply_url
 
                     skill_tags = card.select('.round_tabs span, .skills span')
                     skills     = [s.get_text(strip=True) for s in skill_tags if s.get_text(strip=True)]
