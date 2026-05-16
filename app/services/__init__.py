@@ -1,1 +1,1 @@
-# NirVexa AI Services
+# NyrVexa AI Services

@@ -1,6 +1,6 @@
 """
 app/routes/jobs.py
-NirVexa Jobs API with FAISS Semantic Search
+NyrVexa Jobs API with FAISS Semantic Search
 """
 
 import logging
@@ -368,7 +368,7 @@ def delete_alert(alert_id):
 
 def _check_admin(req) -> bool:
     secret = req.headers.get("X-Admin-Secret", "")
-    return secret == os.environ.get("ADMIN_SECRET", "nirvexa-dev")
+    return secret == os.environ.get("ADMIN_SECRET", "nyrvexa-dev")
 
 
 @jobs_bp.route("/admin/faiss-status", methods=["GET"])

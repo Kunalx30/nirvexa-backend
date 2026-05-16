@@ -1,6 +1,6 @@
 """
 app/routes/interview.py
-NirVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI
+NyrVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI
 """
 import logging
 from flask import Blueprint, jsonify, request, send_file, g

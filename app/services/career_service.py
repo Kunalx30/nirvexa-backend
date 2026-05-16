@@ -175,7 +175,7 @@ Rules:
     try:
         client = openai.OpenAI(
             api_key=current_app.config["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com/v1",
+            base_url="https://api.deepseek.com",
             timeout=90.0
         )
         response = client.chat.completions.create(
@@ -273,7 +273,7 @@ Rules:
     try:
         client = openai.OpenAI(
             api_key=current_app.config["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com/v1",
+            base_url="https://api.deepseek.com",
             timeout=60.0
         )
         response = client.chat.completions.create(

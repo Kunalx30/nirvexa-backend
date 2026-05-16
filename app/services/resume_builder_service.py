@@ -1,6 +1,6 @@
 """
 app/services/resume_builder_service.py
-NirVexa — Resume Builder: AI generation + LaTeX injection + compilation.
+NyrVexa — Resume Builder: AI generation + LaTeX injection + compilation.
 
 PUBLIC API (called by app/routes/resume.py):
   build_resume(form_data, template_id, user_id, resume_id) -> dict
@@ -38,7 +38,11 @@ from app.services.latex_compiler import compile_latex
 logger = logging.getLogger(__name__)
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_KEY = lambda: os.environ.get("GROQ_RESUME_API_KEY") or os.environ.get("GROQ_API_KEY", "")
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+GROQ_RESUME_KEY = lambda: os.environ.get("GROQ_RESUME_API_KEY", "")
+GROQ_MAIN_KEY   = lambda: os.environ.get("GROQ_API_KEY", "")
+DEEPSEEK_KEY    = lambda: os.environ.get("DEEPSEEK_API_KEY", "")
+GEMINI_KEY      = lambda: os.environ.get("GEMINI_API_KEY", "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,29 +253,100 @@ Use THIS exact JSON structure — replace ALL example values with real content f
 {schema}"""
 
 
-def _call_groq_generate(form_data: dict, extra_instruction: str = "") -> dict:
-    """Call Groq LLaMA 3.3 70B to generate resume content. Returns parsed dict."""
+def _call_ai_generate(form_data: dict, extra_instruction: str = "") -> dict:
+    """
+    Generate resume content JSON using a multi-provider fallback chain.
+    Order: Groq (resume key) → Groq (main key) → DeepSeek → Gemini.
+    """
     system = SYSTEM_PROMPT
     if extra_instruction:
         system += f"\n\nADDITIONAL INSTRUCTION: {extra_instruction}"
 
+    user_prompt = _build_user_prompt(form_data)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user_prompt},
+    ]
+
+    # ── Provider 1: Groq with RESUME API key ──────────────────────
+    groq_resume_key = GROQ_RESUME_KEY()
+    if groq_resume_key:
+        try:
+            logger.info("[Resume AI] Trying Groq (resume key)")
+            raw = _call_openai_compat(GROQ_URL, groq_resume_key, "llama-3.3-70b-versatile", messages)
+            return _parse_ai_response(raw)
+        except Exception as e:
+            logger.warning("[Resume AI] Groq resume key failed: %s", e)
+
+    # ── Provider 2: Groq with MAIN API key ────────────────────────
+    groq_main_key = GROQ_MAIN_KEY()
+    if groq_main_key and groq_main_key != groq_resume_key:
+        try:
+            logger.info("[Resume AI] Trying Groq (main key)")
+            raw = _call_openai_compat(GROQ_URL, groq_main_key, "llama-3.3-70b-versatile", messages)
+            return _parse_ai_response(raw)
+        except Exception as e:
+            logger.warning("[Resume AI] Groq main key failed: %s", e)
+
+    # ── Provider 3: DeepSeek ──────────────────────────────────────
+    ds_key = DEEPSEEK_KEY()
+    if ds_key:
+        try:
+            logger.info("[Resume AI] Trying DeepSeek")
+            raw = _call_openai_compat(DEEPSEEK_URL, ds_key, "deepseek-chat", messages)
+            return _parse_ai_response(raw)
+        except Exception as e:
+            logger.warning("[Resume AI] DeepSeek failed: %s", e)
+
+    # ── Provider 4: Gemini ────────────────────────────────────────
+    gemini_key = GEMINI_KEY()
+    if gemini_key:
+        try:
+            logger.info("[Resume AI] Trying Gemini")
+            raw = _call_gemini_resume(gemini_key, system, user_prompt)
+            return _parse_ai_response(raw)
+        except Exception as e:
+            logger.warning("[Resume AI] Gemini failed: %s", e)
+
+    raise RuntimeError("[Resume AI] All providers failed. Cannot generate resume content.")
+
+
+def _call_openai_compat(url: str, api_key: str, model: str, messages: list) -> str:
+    """Call any OpenAI-compatible API (Groq, DeepSeek) via raw HTTP."""
     payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user",   "content": _build_user_prompt(form_data)},
-        ],
+        "model": model,
+        "messages": messages,
         "temperature": 0.65,
         "max_tokens": 2800,
     }
     resp = req.post(
-        GROQ_URL,
+        url,
         json=payload,
-        headers={"Authorization": f"Bearer {GROQ_KEY()}"},
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=90,
     )
     resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"]
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+def _call_gemini_resume(api_key: str, system: str, user_prompt: str) -> str:
+    """Call Google Gemini for resume generation."""
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system,
+        generation_config=genai.GenerationConfig(
+            max_output_tokens=2800,
+            temperature=0.65,
+        ),
+    )
+    response = model.generate_content(user_prompt, request_options={"timeout": 90})
+    return response.text
+
+
+def _parse_ai_response(raw: str) -> dict:
+    """Parse and sanitize the AI-generated JSON resume content."""
     clean = re.sub(r"```json|```", "", raw).strip()
     parsed = json.loads(clean)
     parsed = _sanitize_ampersands(parsed)
@@ -1117,7 +1192,7 @@ def _upload_to_r2(pdf_bytes: bytes, user_id: str, resume_id: str) -> str:
     account_id = os.environ.get("R2_ACCOUNT_ID")
     access_key = os.environ.get("R2_ACCESS_KEY")
     secret_key = os.environ.get("R2_SECRET_KEY")
-    bucket     = os.environ.get("R2_BUCKET", "nirvexa-resumes")
+    bucket     = os.environ.get("R2_BUCKET", "nyrvexa-resumes")
     if not all([account_id, access_key, secret_key]):
         logger.info("[R2] Skipping — R2 not configured")
         return ""
@@ -1148,7 +1223,7 @@ def build_resume(
 ) -> dict:
     """
     Full pipeline:
-      1. Groq AI generates resume content JSON
+      1. AI generates resume content JSON (Groq → DeepSeek → Gemini fallback)
       2. Retry if word_count < 400
       3. Inject into LaTeX template
       4. Compile with Tectonic
@@ -1160,12 +1235,12 @@ def build_resume(
         raise ValueError(f"Template '{template_id}' not found or inactive.")
 
     logger.info(f"[Builder] Generating resume content for user {user_id}")
-    ai_content = _call_groq_generate(form_data)
+    ai_content = _call_ai_generate(form_data)
 
     word_count = ai_content.get("word_count", 999)
     if isinstance(word_count, int) and word_count < 400:
         logger.info(f"[Builder] word_count={word_count} < 400 — retrying with expansion instruction")
-        ai_content = _call_groq_generate(
+        ai_content = _call_ai_generate(
             form_data,
             extra_instruction=(
                 f"The previous attempt had only {word_count} words — that is too short. "
@@ -1196,31 +1271,49 @@ def build_resume(
 def enhance_bullets(bullets: list) -> list:
     """
     Rewrite raw bullet points into strong ATS-optimized sentences.
-    Called by POST /api/resume/enhance
+    Uses fallback chain: Groq Resume Key → Groq Main Key → DeepSeek.
     """
-    prompt = (
+    system_prompt = (
         "You are an expert resume writer. Rewrite each bullet point into a strong, "
         "ATS-optimized sentence using: action verb + specific task + quantified result. "
         "Each rewritten bullet must be ONE sentence only. Max 20 words. "
-        "Indian job market context. "
         "Return ONLY a JSON array of rewritten strings, same count as input. No markdown."
     )
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": prompt},
-            {"role": "user",   "content": f"Bullets to rewrite:\n{json.dumps(bullets)}"},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 1024,
-    }
-    resp = req.post(
-        GROQ_URL,
-        json=payload,
-        headers={"Authorization": f"Bearer {GROQ_KEY()}"},
-        timeout=45,
-    )
-    resp.raise_for_status()
-    raw   = resp.json()["choices"][0]["message"]["content"]
-    clean = re.sub(r"```json|```", "", raw).strip()
-    return json.loads(clean)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": f"Bullets to rewrite:\n{json.dumps(bullets)}"},
+    ]
+
+    providers = []
+    grk = GROQ_RESUME_KEY()
+    gmk = GROQ_MAIN_KEY()
+    dsk = DEEPSEEK_KEY()
+    if grk:
+        providers.append((GROQ_URL, grk, "llama-3.3-70b-versatile"))
+    if gmk and gmk != grk:
+        providers.append((GROQ_URL, gmk, "llama-3.3-70b-versatile"))
+    if dsk:
+        providers.append((DEEPSEEK_URL, dsk, "deepseek-chat"))
+
+    for url, key, model in providers:
+        try:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 1024,
+            }
+            resp = req.post(
+                url, json=payload,
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=45,
+            )
+            resp.raise_for_status()
+            raw   = resp.json()["choices"][0]["message"]["content"]
+            clean = re.sub(r"```json|```", "", raw).strip()
+            return json.loads(clean)
+        except Exception as e:
+            logger.warning("[Enhance Bullets] Provider failed: %s", e)
+            continue
+
+    raise RuntimeError("[Enhance Bullets] All providers failed.")

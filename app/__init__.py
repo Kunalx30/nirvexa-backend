@@ -49,7 +49,7 @@ def create_app(env: str = None) -> Flask:
             "https://nyrvexa.in",
             "https://www.nyrvexa.in",
             # Web - production (old domain — keep for safety)
-            "https://nirvexa-frontend.vercel.app",
+            "https://nyrvexa-frontend.vercel.app",
             # Web - local dev
             "http://localhost:5173",
             "http://localhost:5174",
@@ -91,12 +91,12 @@ def create_app(env: str = None) -> Flask:
     def health_check():
         return jsonify({
             "status": "healthy",
-            "app": app.config.get("APP_NAME", "NyrVexa"),
+            "app": app.config.get("APP_NAME", "NirVexa"),
             "version": app.config.get("APP_VERSION", "1.0.0"),
             "environment": env,
         }), 200
 
-    app.logger.info(f"NyrVexa backend started in [{env}] mode")
+    app.logger.info(f"NirVexa backend started in [{env}] mode")
     return app
 
 

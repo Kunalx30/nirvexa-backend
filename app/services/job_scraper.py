@@ -76,7 +76,7 @@ def scrape_remotive() -> list[dict]:
     """Remotive.com — free REST API. Quality remote tech jobs, low competition."""
     url = "https://remotive.com/api/remote-jobs"
     try:
-        resp = requests.get(url, timeout=15, headers={'User-Agent': 'NirVexa/1.0 Job Aggregator'})
+        resp = requests.get(url, timeout=15, headers={'User-Agent': 'NyrVexa/1.0 Job Aggregator'})
         resp.raise_for_status()
         items = resp.json().get('jobs', [])
         jobs = []
@@ -700,7 +700,7 @@ def scrape_himalayas() -> list[dict]:
 def scrape_aijobs() -> list[dict]:
     """
     AI Jobs Net — AI/ML/Data Science niche board.
-    Less competition, better fit for NirVexa data science users.
+    Less competition, better fit for NyrVexa data science users.
     Fixed: tries multiple endpoints.
     """
     import xml.etree.ElementTree as ET
@@ -1213,7 +1213,7 @@ def scrape_greenhouse_fresher_companies() -> list[dict]:
     for slug, company_name in companies:
         try:
             url  = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
-            resp = requests.get(url, timeout=10, headers={'User-Agent': 'NirVexa/1.0'})
+            resp = requests.get(url, timeout=10, headers={'User-Agent': 'NyrVexa/1.0'})
             if resp.status_code != 200:
                 time.sleep(0.3)
                 continue

@@ -1,6 +1,6 @@
 """
 app/services/rag_pipeline.py
-NirVexa — Phase 5.6: FAISS Semantic Search
+NyrVexa — Phase 5.6: FAISS Semantic Search
 Uses HuggingFace Inference API for embeddings — no daily quota limit.
 
 Model: sentence-transformers/all-MiniLM-L6-v2
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 HF_MODEL       = "sentence-transformers/all-MiniLM-L6-v2"
 HF_API_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
 VECTOR_DIM     = 384
-INDEX_PATH     = "nirvexa_jobs.index"
-IDMAP_PATH     = "nirvexa_jobs_idmap.pkl"
+INDEX_PATH     = "nyrvexa_jobs.index"
+IDMAP_PATH     = "nyrvexa_jobs_idmap.pkl"
 BATCH_SIZE     = 64     # HF handles up to 64 texts per call fine
 BATCH_DELAY    = 0.5    # small delay between batches
 MAX_RETRIES    = 4

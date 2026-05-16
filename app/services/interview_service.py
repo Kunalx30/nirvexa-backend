@@ -1,6 +1,6 @@
 """
 app/services/interview_service.py
-NirVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI Service
+NyrVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI Service
 """
 import logging
 import json
@@ -410,7 +410,7 @@ def delete_interview_session(session_id: str, user_id: str) -> dict:
 def _deepseek_client():
     return openai.OpenAI(
         api_key=current_app.config["DEEPSEEK_API_KEY"],
-        base_url="https://api.deepseek.com/v1",
+        base_url="https://api.deepseek.com",
         timeout=60.0,
     )
 

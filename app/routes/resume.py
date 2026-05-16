@@ -1,6 +1,6 @@
 """
 app/routes/resume.py
-NirVexa — Resume Suite (Phase 6.0)
+NyrVexa — Resume Suite (Phase 6.0)
 
 Endpoints:
   POST   /api/resume/analyze          — ATS analyzer (JD-aware, backwards-compatible)

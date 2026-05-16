@@ -50,7 +50,7 @@ def trigger_news_pipeline():
     """
     secret = request.headers.get('X-Admin-Secret')
     import os
-    if secret != os.environ.get('ADMIN_SECRET', 'nirvexa-dev'):
+    if secret != os.environ.get('ADMIN_SECRET', 'nyrvexa-dev'):
         return jsonify({'error': 'Unauthorized'}), 401
 
     try:

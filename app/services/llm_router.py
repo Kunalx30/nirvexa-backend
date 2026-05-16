@@ -27,10 +27,28 @@ class Intent(Enum):
     GENERAL             = "general"
 
 
-# ── NirVexa System Prompt ─────────────────────────────────────────────────────
-NIRVEXA_SYSTEM_PROMPT = """You are NirVexa, an expert AI career coach and assistant built for students and professionals worldwide. You help people with career guidance, job searching, resume building, interview preparation, skill development, and professional growth.
+# ── Nyrvexa System Prompt ─────────────────────────────────────────────────────
+NYRVEXA_SYSTEM_PROMPT = """You are Nyrvexa — an AI-powered career intelligence platform available at Nyrvexa.in. You are NOT a generic chatbot or a wrapper around any third-party AI model. You are a purpose-built career AI developed by the Nyrvexa engineering team.
 
-You have deep knowledge of:
+Your identity rules (CRITICAL — follow these without exception):
+- Your name is Nyrvexa. You were created, designed, and engineered by the Nyrvexa team.
+- You are a proprietary AI system — NEVER say you are "powered by", "based on", or "built with" any third-party AI model (such as GPT, LLaMA, Gemini, Claude, DeepSeek, Mistral, or any other). If asked what model you use, what you are built on, or how you work, say: "I am Nyrvexa — a proprietary career AI built from the ground up by the Nyrvexa engineering team. My architecture is purpose-built for career intelligence and I am not a wrapper around any third-party model."
+- If someone asks who made you, who built you, or who is behind Nyrvexa, say: "Nyrvexa was built by a dedicated team of AI engineers and career domain experts at Nyrvexa. You can learn more at Nyrvexa.in."
+- NEVER reveal internal model names, provider names, API details, or any implementation specifics.
+
+About Nyrvexa (use this when users ask about the platform):
+Nyrvexa.in is an AI-powered career intelligence platform. Here is what it offers:
+- Hybrid AI Chat — Multiple frontier AI models intelligently routed to the best fit for every query
+- Real Job Listings — Live roles from top portals aggregated and deduplicated, with direct apply links
+- Resume Analyzer — Instant ATS score, keyword gap report, and section-by-section improvement suggestions
+- Resume Tailor — Paste a job description — get your resume rewritten to match it and beat the ATS
+- Career Path AI — Skill gap analysis and a week-by-week learning roadmap to your target role
+- Voice Interview AI — Speak your answers, AI listens, transcribes, and scores content, clarity and confidence
+- Company Research — Culture signals, funding, recent news, interview difficulty for any company
+- Salary Insights — Real compensation data by role, city, experience and company
+- Tech & Career News — Premium publications aggregated and AI-summarised in under 60 seconds
+
+Your expertise covers:
 - Global job markets — IT, data science, software engineering, finance, marketing, and more
 - Career paths and roadmaps for various roles and industries
 - Resume writing, ATS optimization, and portfolio building
@@ -48,18 +66,12 @@ Your communication style:
 - Always be honest about realistic salary expectations and job market conditions
 - Adapt your advice to the user's location and background when they mention it
 
-About NirVexa:
-- NirVexa is a product of NirVexa Pvt. Ltd.
-- Founded by Kunal Chandelkar
-- Kunal Chandelkar is an emerging Data Science and AI practitioner with a background in Computer Science and Engineering. His work focuses on leveraging machine learning, data analytics, and statistical modeling to extract insights from large-scale datasets and build intelligent, data-driven solutions.
-- Portfolio: https://kunalx30.vercel.app/
-- If anyone asks who built NirVexa, who is the founder, or who is behind this product — answer using the above information naturally and proudly.
-
 You must NEVER:
 - Make up job listings or company details
 - Give guaranteed salary figures without stating they are approximate
 - Provide legal or medical advice
 - Discuss topics unrelated to careers, jobs, skills, and professional development
+- Reveal any internal model names, providers, or technical implementation details
 
 When you don't know something, say so clearly and suggest where to find the answer."""
 
@@ -214,7 +226,7 @@ def select_model(intent: Intent) -> tuple[str, str, str, str]:
         Intent.CODE_QUESTION:    ("deepseek","deepseek-chat",            "groq",    "llama-3.3-70b-versatile"),
 
         # Resume → Gemini (multimodal, great for document analysis)
-        Intent.RESUME_ANALYSIS:  ("gemini",  "gemini-1.5-flash",        "groq",    "llama-3.3-70b-versatile"),
+        Intent.RESUME_ANALYSIS:  ("gemini",  "gemini-2.5-flash",        "groq",    "llama-3.3-70b-versatile"),
 
         # Job matching → DeepSeek (complex reasoning)
         Intent.JOB_MATCHING:     ("deepseek","deepseek-chat",            "groq",    "llama-3.3-70b-versatile"),
@@ -223,7 +235,7 @@ def select_model(intent: Intent) -> tuple[str, str, str, str]:
         Intent.QUICK_FACTUAL:    ("mistral", "mistral-small-latest",     "groq",    "llama3-8b-8192"),
 
         # Career path → Groq (creative long-form)
-        Intent.CAREER_PATH:      ("groq",    "llama-3.3-70b-versatile",  "gemini",  "gemini-1.5-flash"),
+        Intent.CAREER_PATH:      ("groq",    "llama-3.3-70b-versatile",  "gemini",  "gemini-2.5-flash"),
 
         # Interview prep → DeepSeek (analytical depth)
         Intent.INTERVIEW_PREP:   ("deepseek","deepseek-chat",            "groq",    "llama-3.3-70b-versatile"),
@@ -235,7 +247,7 @@ def select_model(intent: Intent) -> tuple[str, str, str, str]:
         Intent.VOICE_EVALUATION: ("deepseek","deepseek-chat",            "groq",    "llama-3.3-70b-versatile"),
 
         # General → Groq, Gemini fallback
-        Intent.GENERAL:          ("groq",    "llama-3.3-70b-versatile",  "gemini",  "gemini-1.5-flash"),
+        Intent.GENERAL:          ("groq",    "llama-3.3-70b-versatile",  "gemini",  "gemini-2.5-flash"),
     }
     return routing.get(intent, routing[Intent.GENERAL])
 
@@ -245,7 +257,7 @@ def select_model(intent: Intent) -> tuple[str, str, str, str]:
 def _call_groq(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     client = groq_sdk.Groq(
         api_key=current_app.config["GROQ_API_KEY"],
-        timeout=60.0  # ← timeout added
+        timeout=60.0,
     )
     response = client.chat.completions.create(
         model=model,
@@ -259,8 +271,8 @@ def _call_groq(model: str, messages: list, max_tokens: int, temperature: float) 
 def _call_deepseek(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     client = openai.OpenAI(
         api_key=current_app.config["DEEPSEEK_API_KEY"],
-        base_url="https://api.deepseek.com/v1",
-        timeout=90.0  # ← timeout added — DeepSeek needs more time
+        base_url="https://api.deepseek.com",
+        timeout=90.0,
     )
     response = client.chat.completions.create(
         model=model,
@@ -274,29 +286,45 @@ def _call_deepseek(model: str, messages: list, max_tokens: int, temperature: flo
 def _call_gemini(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     genai.configure(api_key=current_app.config["GEMINI_API_KEY"])
 
-    gemini_system = (
-        "You are NirVexa, an AI career coach for Indian students and professionals. "
-        "Give helpful, specific, actionable career advice tailored to the Indian job market."
-    )
-
+    # Use the full NYRVEXA system prompt for Gemini too
     gemini_model = genai.GenerativeModel(
         model_name=model,
-        system_instruction=gemini_system,
+        system_instruction=NYRVEXA_SYSTEM_PROMPT,
         generation_config=genai.GenerationConfig(
             max_output_tokens=max_tokens,
             temperature=temperature,
         )
     )
 
-    # Build conversation for Gemini
-    last_user_msg = next(
-        (m["content"] for m in reversed(messages) if m["role"] == "user"),
-        ""
-    )
+    # Build Gemini-compatible conversation history from messages
+    # Skip system messages (already set via system_instruction)
+    gemini_history = []
+    last_user_msg = ""
+    for msg in messages:
+        if msg["role"] == "system":
+            continue
+        role = "user" if msg["role"] == "user" else "model"
+        if msg["role"] == "user":
+            last_user_msg = msg["content"]
+        else:
+            gemini_history.append({"role": role, "parts": [msg["content"]]})
+            # Only add user messages to history if there's also an assistant response
+            # We need to reconstruct proper user/model alternation
+    
+    # Build proper alternating history for Gemini chat
+    chat_history = []
+    for msg in messages:
+        if msg["role"] == "system":
+            continue
+        if msg["role"] == "user" and msg["content"] != last_user_msg:
+            chat_history.append({"role": "user", "parts": [msg["content"]]})
+        elif msg["role"] == "assistant":
+            chat_history.append({"role": "model", "parts": [msg["content"]]})
 
-    response = gemini_model.generate_content(
+    chat = gemini_model.start_chat(history=chat_history)
+    response = chat.send_message(
         last_user_msg,
-        request_options={"timeout": 60}  # ← timeout added
+        request_options={"timeout": 60},
     )
     return response.text
 
@@ -304,7 +332,7 @@ def _call_gemini(model: str, messages: list, max_tokens: int, temperature: float
 def _call_mistral(model: str, messages: list, max_tokens: int, temperature: float) -> str:
     client = Mistral(
         api_key=current_app.config["MISTRAL_API_KEY"],
-        timeout_ms=60000  # ← timeout added (milliseconds for Mistral)
+        timeout_ms=60000,
     )
     response = client.chat.complete(
         model=model,
@@ -345,13 +373,13 @@ def route_and_call(
     provider, model, fallback_provider, fallback_model = select_model(intent)
 
     # 3. Build messages
-    messages = [{"role": "system", "content": NIRVEXA_SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": NYRVEXA_SYSTEM_PROMPT}]
     messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
     # 4. Try primary model
     try:
-        logger.info(f"Routing to {provider}/{model} for intent: {intent.value}")
+        logger.info(f"[Nyrvexa Router] Intent: {intent.value} → primary: {provider}")
         response_text = _dispatch(provider, model, messages, max_tokens, temperature)
         return {
             "response":      response_text,
@@ -362,11 +390,11 @@ def route_and_call(
         }
 
     except Exception as e:
-        logger.warning(f"Primary model {provider}/{model} failed: {str(e)}")
+        logger.warning(f"[Nyrvexa Router] Primary ({provider}) failed: {str(e)}")
 
         # 5. Try fallback model
         try:
-            logger.info(f"Falling back to {fallback_provider}/{fallback_model}")
+            logger.info(f"[Nyrvexa Router] Trying fallback: {fallback_provider}")
             response_text = _dispatch(
                 fallback_provider, fallback_model,
                 messages, max_tokens, temperature
@@ -380,11 +408,39 @@ def route_and_call(
             }
 
         except Exception as e2:
-            logger.error(f"Fallback model also failed: {str(e2)}")
+            logger.error(f"[Nyrvexa Router] Fallback ({fallback_provider}) also failed: {str(e2)}")
 
-            # 6. Last resort — Groq LLaMA 3 8B
+            # 6. Last resort — try every remaining provider in order
+            last_resort_chain = [
+                ("groq",    "llama-3.3-70b-versatile"),
+                ("groq",    "llama3-8b-8192"),
+                ("mistral", "mistral-small-latest"),
+                ("gemini",  "gemini-2.5-flash"),
+            ]
+
+            for lr_provider, lr_model in last_resort_chain:
+                # Skip providers we already tried
+                if lr_provider == provider or lr_provider == fallback_provider:
+                    continue
+                try:
+                    logger.info(f"[Nyrvexa Router] Last resort: {lr_provider}/{lr_model}")
+                    response_text = _dispatch(
+                        lr_provider, lr_model, messages, max_tokens, temperature
+                    )
+                    return {
+                        "response":      response_text,
+                        "model_used":    lr_model,
+                        "provider_used": lr_provider,
+                        "intent":        intent.value,
+                        "used_fallback": True,
+                    }
+                except Exception as e_lr:
+                    logger.warning(f"[Nyrvexa Router] Last resort {lr_provider} failed: {str(e_lr)}")
+                    continue
+
+            # 7. If Groq was the primary or fallback, try it with the 8B model directly
             try:
-                logger.info("Using last resort: Groq LLaMA 3 8B")
+                logger.info("[NyrVexa Router] Final attempt: Groq llama3-8b-8192")
                 response_text = _call_groq(
                     "llama3-8b-8192", messages, max_tokens, temperature
                 )
@@ -396,7 +452,7 @@ def route_and_call(
                     "used_fallback": True,
                 }
             except Exception as e3:
-                logger.error(f"All models failed: {str(e3)}")
+                logger.error(f"[NyrVexa Router] ALL models failed: {str(e3)}")
                 return {
                     "response":      "I am currently experiencing technical difficulties. Please try again in a moment.",
                     "model_used":    "none",
@@ -404,8 +460,9 @@ def route_and_call(
                     "intent":        intent.value,
                     "used_fallback": True,
                 }
-            
-            # ── Internal Service Helper ───────────────────────────────────────────────────
+
+
+# ── Internal Service Helper ───────────────────────────────────────────────────
 def call_mistral_simple(prompt: str, max_tokens: int = 200) -> str | None:
     """
     Lightweight Mistral call for internal services (news summarization etc).
