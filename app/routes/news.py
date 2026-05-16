@@ -5,7 +5,7 @@ from app.models.news_cache import NewsCache
 logger = logging.getLogger(__name__)
 news_bp = Blueprint('news', __name__)
 
-VALID_CATEGORIES = {'all', 'ai', 'data-science', 'startups', 'govt-jobs', 'general'}
+VALID_CATEGORIES = {'all', 'ai', 'data-science', 'startups', 'general'}
 
 
 @news_bp.route('/api/news', methods=['GET'])
