@@ -1,4 +1,5 @@
 import logging
+import json
 from flask import current_app
 import groq as groq_sdk
 
@@ -15,7 +16,6 @@ def generate_career_path(
     Calls Groq LLaMA 3.3 70B to generate a detailed career roadmap.
     Returns structured dict with steps, skill gap, and estimated time.
     """
-    import json
 
     skills_str = ", ".join(current_skills) if current_skills else "None mentioned"
 
@@ -105,7 +105,7 @@ Rules:
     except Exception as e:
         logger.error("[CareerService] Career path generation failed: %s", e)
         return {"success": False, "error": "Failed to generate career path. Please try again."}
-    
+
 
 def generate_skill_gap(user_skills: list, target_job_title: str) -> dict:
     """
@@ -113,7 +113,6 @@ def generate_skill_gap(user_skills: list, target_job_title: str) -> dict:
     extracts most common skills, compares against user skills,
     returns gap analysis via DeepSeek V3.
     """
-    import json
     from collections import Counter
     from app.models.job import Job
     import openai
@@ -144,8 +143,8 @@ def generate_skill_gap(user_skills: list, target_job_title: str) -> dict:
         jobs_found = len(matching_jobs)
 
     # ── Step 3: Call DeepSeek for intelligent gap analysis ───────────────────
-    user_skills_str   = ", ".join(user_skills) if user_skills else "None"
-    top_skills_str    = ", ".join(top_skills) if top_skills else "Not available from DB"
+    user_skills_str = ", ".join(user_skills) if user_skills else "None"
+    top_skills_str  = ", ".join(top_skills) if top_skills else "Not available from DB"
 
     prompt = f"""You are a career advisor for the Indian job market.
 
@@ -224,17 +223,19 @@ Rules:
     except Exception as e:
         logger.error("[SkillGap] Skill gap generation failed: %s", e)
         return {"success": False, "error": "Failed to generate skill gap analysis. Please try again."}
-    
+
+
 # ── In-memory cache for company research ─────────────────────────────────────
 _company_cache: dict = {}
 
 
-def get_company_research(company_name: str) -> dict:
+def get_company_research(company_name: str, location: str = "") -> dict:
     """
-    Returns research on a company using DeepSeek V3.
-    Results cached in memory per company name to avoid repeated API calls.
+    Research a company using AI (DeepSeek → Groq fallback).
+    Returns rich structured data for the frontend including map_query,
+    genuine_reviews, work_environment, hiring_roles, headquarters,
+    and platform URLs. Results cached in memory per company name.
     """
-    import json
     import openai
 
     cache_key = company_name.lower().strip()
@@ -244,90 +245,161 @@ def get_company_research(company_name: str) -> dict:
         logger.info("[CompanyResearch] Cache hit for '%s'", company_name)
         return {"success": True, "data": _company_cache[cache_key]}
 
-    prompt = f"""You are a brutally honest corporate research aggregator. You pull genuine, unvarnished insights from Glassdoor, AmbitionBox, LeetCode discussions, and Reddit.
-    
-Research this company for a job seeker: {company_name}
+    location_hint = f" (headquartered in or known presence in {location})" if location else ""
 
-Respond ONLY with valid JSON. No preamble, no markdown.
+    prompt = f"""You are a senior tech industry researcher with access to Glassdoor, LinkedIn, AmbitionBox, Blind, Levels.fyi, and public company data as of 2025.
+
+Research the company: **{company_name}**{location_hint}
+
+Return ONLY a valid JSON object. No preamble, no markdown, no backticks. Use this exact schema:
 
 {{
-  "summary": "2-3 sentence overview of what the company actually does and how they make money",
-  "industry": "primary industry",
-  "founded": "year founded",
-  "headquarters": "city, country",
-  "india_presence": "description of their India offices/teams",
-  "who_they_hire": "genuine insight: do they hire from tier-1 colleges? freshers vs experienced? off-campus drives?",
-  "top_departments": ["Engineering", "Sales", "Data", "etc"],
-  "tech_stack": ["skill 1", "skill 2", "tech 1", "tech 2"],
-  "culture_notes": "brutally honest culture review (is it toxic? good work-life balance? micro-management? fast-paced?)",
-  "interview_type": "LeetCode heavy? Behavioral heavy? Take-home assignments? Domain-specific?",
-  "hiring_process": "detailed steps: how many rounds, what happens in each round",
-  "interview_tips": [
-    "highly specific tip 1 (e.g., focus on dynamic programming)",
-    "highly specific tip 2",
-    "highly specific tip 3"
-  ],
-  "common_interview_questions": [
-    "genuine technical or behavioral question they ask",
-    "genuine question 2"
-  ],
-  "glassdoor_rating": <float, genuine rating or realistic estimate>,
-  "avg_salary_india_lpa": "realistic range (e.g. 15-25 LPA)",
-  "pros": ["genuine pro 1", "genuine pro 2", "genuine pro 3"],
-  "cons": ["genuine con 1 (e.g. slow promotions)", "genuine con 2"]
+  "summary": "<2-3 sentence factual overview: what the company does, market position, notable achievements>",
+  "founded": "<year or 'Unknown'>",
+  "size": "<headcount range, e.g. '10,000–50,000 employees'>",
+  "headquarters": "<full city + country, e.g. 'Bangalore, Karnataka, India' or 'Mountain View, CA, USA'>",
+  "map_query": "<city + country optimised for Google Maps, e.g. 'Google HQ Mountain View California'>",
+  "website": "<official website URL>",
+  "linkedin_url": "<LinkedIn company page URL>",
+  "glassdoor_url": "<Glassdoor company page URL>",
+  "ambitionbox_url": "<AmbitionBox company page URL if Indian company, else null>",
+  "glassdoor_rating": "<e.g. '4.1 / 5' or null>",
+  "ambitionbox_rating": "<e.g. '3.9 / 5' or null — only for Indian companies>",
+  "tech_stack": ["<tech 1>", "<tech 2>", "..."],
+  "culture_notes": "<3-4 sentences on culture: values, pace, management style, team dynamics>",
+  "work_environment": {{
+    "remote_policy": "<Remote / Hybrid / In-office — with details>",
+    "work_hours": "<typical hours/week, e.g. '40-50 hrs/week, flexible'>",
+    "perks": ["<perk 1>", "<perk 2>", "<perk 3>", "..."],
+    "dress_code": "<Casual / Business casual / Formal>",
+    "office_vibe": "<one sentence on physical/virtual workspace feel>"
+  }},
+  "hiring_roles": {{
+    "common_roles": ["<role 1>", "<role 2>", "<role 3>", "..."],
+    "top_departments": ["<dept 1>", "<dept 2>", "<dept 3>"],
+    "typical_profile": "<2 sentences: what background/skills they typically look for>",
+    "seniority_mix": "<e.g. '60% mid-level, 25% senior, 15% fresh'>",
+    "preferred_background": ["<college/bootcamp/FAANG exp>", "..."]
+  }},
+  "hiring_process": "<step-by-step description of typical interview process, 3-5 steps>",
+  "interview_tips": ["<tip 1>", "<tip 2>", "<tip 3>", "<tip 4>"],
+  "genuine_reviews": [
+    {{
+      "source": "Glassdoor",
+      "role": "<reviewer job title>",
+      "rating": <float 1.0-5.0>,
+      "sentiment": "positive | mixed | negative",
+      "pros": "<what the reviewer liked>",
+      "cons": "<what the reviewer disliked>"
+    }},
+    {{
+      "source": "AmbitionBox",
+      "role": "<reviewer job title>",
+      "rating": <float 1.0-5.0>,
+      "sentiment": "positive | mixed | negative",
+      "pros": "<what the reviewer liked>",
+      "cons": "<what the reviewer disliked>"
+    }},
+    {{
+      "source": "Blind",
+      "role": "<reviewer job title>",
+      "rating": <float 1.0-5.0>,
+      "sentiment": "positive | mixed | negative",
+      "pros": "<what the reviewer liked>",
+      "cons": "<what the reviewer disliked>"
+    }}
+  ]
 }}
 
 Rules:
-- DO NOT sugarcoat. If a company is known for bad work-life balance, say it in culture_notes or cons.
-- glassdoor_rating must be a float.
-- key_skills_and_tech_stack must include both tools (e.g. React) and skills (e.g. B2B Sales) based on their departments.
-- If company is unknown, provide best-effort realistic estimates based on their sector and size."""
+- Be SPECIFIC and FACTUAL. Use real known data about {company_name}.
+- genuine_reviews must feel like real employee reviews, based on what is publicly known about this company.
+- Do NOT make up glassdoor_rating — use known approximate values or null.
+- tech_stack must be real technologies this company actually uses.
+- If company is Indian, include ambitionbox data.
+- map_query should be specific enough to pin the right location on Google Maps.
+- Return ONLY the JSON object. No commentary."""
+
+    def _call_deepseek(prompt_text: str) -> str:
+        client = openai.OpenAI(
+            api_key=current_app.config["DEEPSEEK_API_KEY"],
+            base_url="https://api.deepseek.com",
+            timeout=60.0,
+        )
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."
+                },
+                {"role": "user", "content": prompt_text},
+            ],
+            max_tokens=2048,
+            temperature=0.2,
+        )
+        return response.choices[0].message.content.strip()
+
+    def _call_groq(prompt_text: str) -> str:
+        import groq
+        groq_client = groq.Groq(api_key=current_app.config.get("GROQ_API_KEY", ""))
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."
+                },
+                {"role": "user", "content": prompt_text},
+            ],
+            max_tokens=2048,
+            temperature=0.2,
+        )
+        return response.choices[0].message.content.strip()
+
+    def _clean_json(raw: str) -> dict:
+        """Strip markdown fences and parse JSON."""
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
 
     try:
         try:
-            client = openai.OpenAI(
-                api_key=current_app.config["DEEPSEEK_API_KEY"],
-                base_url="https://api.deepseek.com",
-                timeout=60.0
-            )
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1024,
-                temperature=0.3,
-            )
-            raw = response.choices[0].message.content.strip()
-        except Exception as ds_err:
-            logger.warning("[CompanyResearch] DeepSeek failed, trying Groq fallback: %s", ds_err)
-            import groq
-            groq_client = groq.Groq(api_key=current_app.config.get("GROQ_API_KEY", ""))
-            response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": "You are a company research expert. Always respond with valid JSON only. No markdown, no backticks."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1024,
-                temperature=0.3,
-            )
-            raw = response.choices[0].message.content.strip()
+            raw = _call_deepseek(prompt)
+        except Exception as e:
+            logger.warning("[CompanyResearch] DeepSeek failed, trying Groq fallback: %s", e)
+            raw = _call_groq(prompt)
 
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
+        data = _clean_json(raw)
 
-        result = json.loads(raw)
+        # Normalise: ensure all expected keys exist (graceful degradation)
+        data.setdefault("summary", "")
+        data.setdefault("founded", "Unknown")
+        data.setdefault("size", "")
+        data.setdefault("tech_stack", [])
+        data.setdefault("culture_notes", "")
+        data.setdefault("work_environment", {})
+        data.setdefault("hiring_roles", {})
+        data.setdefault("hiring_process", "")
+        data.setdefault("interview_tips", [])
+        data.setdefault("genuine_reviews", [])
+        data.setdefault("glassdoor_rating", None)
+        data.setdefault("ambitionbox_rating", None)
+        data.setdefault("headquarters", "")
+        data.setdefault("map_query", company_name)
+        data.setdefault("website", None)
+        data.setdefault("linkedin_url", None)
+        data.setdefault("glassdoor_url", None)
+        data.setdefault("ambitionbox_url", None)
 
         # Cache the result
-        _company_cache[cache_key] = result
+        _company_cache[cache_key] = data
         logger.info("[CompanyResearch] Cached result for '%s'", company_name)
 
-        return {"success": True, "data": result}
+        return {"success": True, "data": data}
 
     except json.JSONDecodeError as e:
         logger.error("[CompanyResearch] JSON parse failed: %s", e)

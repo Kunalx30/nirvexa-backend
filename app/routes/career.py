@@ -54,7 +54,7 @@ def generate_career_path():
     except Exception as e:
         logger.error("[Career Route] POST /api/career/path failed: %s", e)
         return jsonify({'error': 'Failed to generate career path'}), 500
-    
+
 
 @career_bp.route('/api/career/skill-gap', methods=['POST'])
 @token_required
@@ -97,7 +97,7 @@ def get_skill_gap():
     except Exception as e:
         logger.error("[Career Route] POST /api/career/skill-gap failed: %s", e)
         return jsonify({'error': 'Failed to generate skill gap analysis'}), 500
-    
+
 
 @career_bp.route('/api/jobs/salary-insights', methods=['GET'])
 def get_salary_insights():
@@ -243,10 +243,10 @@ Rules:
             raw = raw.strip()
 
             ai_data = json.loads(raw)
-            ai_data['success']  = True
-            ai_data['source']   = 'ai'
-            ai_data['role']     = role
-            ai_data['location'] = location_str
+            ai_data['success']      = True
+            ai_data['source']       = 'ai'
+            ai_data['role']         = role
+            ai_data['location']     = location_str
             ai_data['sample_count'] = len(jobs)
 
             return jsonify(ai_data), 200
@@ -254,20 +254,23 @@ Rules:
         except Exception as ai_error:
             logger.error("[SalaryInsights] AI fallback failed: %s", ai_error)
             return jsonify({
-                'success':      False,
-                'error':        'Insufficient salary data and AI fallback failed. Try a different role.'
+                'success': False,
+                'error':   'Insufficient salary data and AI fallback failed. Try a different role.'
             }), 500
 
     except Exception as e:
         logger.error("[Career Route] GET /api/jobs/salary-insights failed: %s", e)
         return jsonify({'error': 'Failed to fetch salary insights'}), 500
-    
+
 
 @career_bp.route('/api/career/company-research', methods=['POST'])
 def company_research():
     """
     POST /api/career/company-research
-    Body: { "company_name": "Google" }
+    Body: {
+        "company_name": "Google",
+        "location": "Bangalore"   ← optional, helps AI pin the right office
+    }
     No auth required — public endpoint.
     Cached per company name to avoid repeated API calls.
     """
@@ -280,8 +283,10 @@ def company_research():
         if not company_name:
             return jsonify({'error': 'company_name is required'}), 400
 
+        location = (data.get('location') or '').strip()  # optional
+
         from app.services.career_service import get_company_research
-        result = get_company_research(company_name)
+        result = get_company_research(company_name, location=location)
 
         if not result['success']:
             return jsonify({'error': result['error']}), 500
