@@ -65,6 +65,16 @@ Your communication style:
 - Give specific, actionable advice — not generic platitudes
 - Always be honest about realistic salary expectations and job market conditions
 - Adapt your advice to the user's location and background when they mention it
+- Be market-realistic, not artificially positive. If the market is difficult, if a user's profile is weak for a role, or if a timeline/salary is unlikely, say that clearly and respectfully.
+- Do not polish weak signals into false confidence. Separate what is strong, what is missing, and what the user must prove with projects, experience, referrals, or interview performance.
+- When giving salaries, hiring odds, timelines, or demand claims, use ranges and uncertainty. State assumptions such as country, city, experience level, and current market conditions.
+- When Nyrvexa already has a dedicated tool for the user's request, answer briefly in chat and suggest the relevant product section instead of trying to replace the full workflow.
+- Product routing suggestions:
+  - Resume review, ATS score, CV feedback, resume creation, or resume tailoring: suggest the Resume Suite at /resume.
+  - Skill gap or target-role fit: suggest Skill Match at /skills.
+  - Career path, roadmap, or role transition plan: suggest Career Path at /career or Interactive Roadmaps at /roadmap-graph.
+  - Mock interview or answer practice: suggest Interview Practice at /interview.
+  - Salary/package questions: suggest Salary Insights at /salary.
 
 You must NEVER:
 - Make up job listings or company details
@@ -74,6 +84,36 @@ You must NEVER:
 - Reveal any internal model names, providers, or technical implementation details
 
 When you don't know something, say so clearly and suggest where to find the answer."""
+
+
+PRODUCT_SUGGESTIONS = {
+    Intent.RESUME_ANALYSIS: (
+        "Nyrvexa has a dedicated **Resume Suite** for this. "
+        "For a real ATS score, JD keyword gaps, and builder workflow, open [Resume Suite](/resume)."
+    ),
+    Intent.SKILL_GAP: (
+        "For a structured comparison against a target role, open [Skill Match](/skills)."
+    ),
+    Intent.CAREER_PATH: (
+        "For an interactive plan, open [Career Path](/career). "
+        "For role-wise learning maps, use [Interactive Roadmaps](/roadmap-graph)."
+    ),
+    Intent.INTERVIEW_PREP: (
+        "For voice-based practice and scoring, open [Interview Practice](/interview)."
+    ),
+    Intent.JOB_MATCHING: (
+        "For live roles and direct apply links, open [Jobs](/jobs)."
+    ),
+}
+
+
+def _with_product_suggestion(response: str, intent: Intent) -> str:
+    suggestion = PRODUCT_SUGGESTIONS.get(intent)
+    if not suggestion:
+        return response
+    if suggestion in response:
+        return response
+    return f"{response.strip()}\n\n---\n**Use the product workflow:** {suggestion}"
 
 # ── Intent Classifier ─────────────────────────────────────────────────────────
 def classify_intent(message: str) -> Intent:
@@ -380,7 +420,10 @@ def route_and_call(
     # 4. Try primary model
     try:
         logger.info(f"[Nyrvexa Router] Intent: {intent.value} → primary: {provider}")
-        response_text = _dispatch(provider, model, messages, max_tokens, temperature)
+        response_text = _with_product_suggestion(
+            _dispatch(provider, model, messages, max_tokens, temperature),
+            intent,
+        )
         return {
             "response":      response_text,
             "model_used":    model,
@@ -395,9 +438,12 @@ def route_and_call(
         # 5. Try fallback model
         try:
             logger.info(f"[Nyrvexa Router] Trying fallback: {fallback_provider}")
-            response_text = _dispatch(
-                fallback_provider, fallback_model,
-                messages, max_tokens, temperature
+            response_text = _with_product_suggestion(
+                _dispatch(
+                    fallback_provider, fallback_model,
+                    messages, max_tokens, temperature
+                ),
+                intent,
             )
             return {
                 "response":      response_text,
@@ -424,8 +470,11 @@ def route_and_call(
                     continue
                 try:
                     logger.info(f"[Nyrvexa Router] Last resort: {lr_provider}/{lr_model}")
-                    response_text = _dispatch(
-                        lr_provider, lr_model, messages, max_tokens, temperature
+                    response_text = _with_product_suggestion(
+                        _dispatch(
+                            lr_provider, lr_model, messages, max_tokens, temperature
+                        ),
+                        intent,
                     )
                     return {
                         "response":      response_text,
@@ -441,8 +490,11 @@ def route_and_call(
             # 7. If Groq was the primary or fallback, try it with the 8B model directly
             try:
                 logger.info("[NyrVexa Router] Final attempt: Groq llama3-8b-8192")
-                response_text = _call_groq(
-                    "llama3-8b-8192", messages, max_tokens, temperature
+                response_text = _with_product_suggestion(
+                    _call_groq(
+                        "llama3-8b-8192", messages, max_tokens, temperature
+                    ),
+                    intent,
                 )
                 return {
                     "response":      response_text,

@@ -125,6 +125,9 @@ def _register_blueprints(app: Flask):
     from app.routes.career import career_bp
     app.register_blueprint(career_bp)
 
+    from app.routes.roadmap_graph import roadmap_graph_bp
+    app.register_blueprint(roadmap_graph_bp)
+
 
 def _register_error_handlers(app: Flask):
     @app.errorhandler(400)
