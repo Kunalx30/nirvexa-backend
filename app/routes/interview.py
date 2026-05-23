@@ -5,6 +5,7 @@ NyrVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI
 import logging
 from flask import Blueprint, jsonify, request, send_file, g
 from app.middleware.auth_middleware import token_required
+from app.middleware.rate_limiter import rate_limit
 import io
 from app.services.tts_service import text_to_speech
 
@@ -88,6 +89,7 @@ def text_evaluate():
 
 @interview_bp.route('/generate', methods=['POST'])
 @token_required
+@rate_limit("interview")
 def generate():
     """
     POST /api/interview/generate

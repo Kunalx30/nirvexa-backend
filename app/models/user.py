@@ -52,6 +52,9 @@ class User(db.Model):
     # --- Status ---
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_premium = db.Column(db.Boolean, default=False, nullable=False)
+    premium_plan = db.Column(db.String(50), nullable=True)
+    premium_expiry = db.Column(db.DateTime(timezone=True), nullable=True)
 
     # --- Timestamps ---
     created_at = db.Column(
@@ -90,6 +93,9 @@ class User(db.Model):
             "job_type": self.job_type,
             "experience_level": self.experience_level,
             "is_verified": self.is_verified,
+            "is_premium": self.is_premium,
+            "premium_plan": self.premium_plan,
+            "premium_expiry": self.premium_expiry.isoformat() if self.premium_expiry else None,
             "created_at": self.created_at.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
         }

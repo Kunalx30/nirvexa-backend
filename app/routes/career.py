@@ -1,6 +1,7 @@
 import logging
 from flask import Blueprint, jsonify, request, g, current_app
 from app.middleware.auth_middleware import token_required
+from app.middleware.rate_limiter import rate_limit
 
 logger = logging.getLogger(__name__)
 career_bp = Blueprint('career', __name__)
@@ -8,6 +9,7 @@ career_bp = Blueprint('career', __name__)
 
 @career_bp.route('/api/career/path', methods=['POST'])
 @token_required
+@rate_limit("career_roadmap")
 def generate_career_path():
     """
     POST /api/career/path
@@ -58,6 +60,7 @@ def generate_career_path():
 
 @career_bp.route('/api/career/skill-gap', methods=['POST'])
 @token_required
+@rate_limit("skill_match")
 def get_skill_gap():
     """
     POST /api/career/skill-gap
@@ -100,6 +103,8 @@ def get_skill_gap():
 
 
 @career_bp.route('/api/jobs/salary-insights', methods=['GET'])
+@token_required
+@rate_limit("salary_insights")
 def get_salary_insights():
     """
     GET /api/jobs/salary-insights?role=Data+Analyst&location=Bangalore
@@ -264,6 +269,8 @@ Rules:
 
 
 @career_bp.route('/api/career/company-research', methods=['POST'])
+@token_required
+@rate_limit("company_research")
 def company_research():
     """
     POST /api/career/company-research

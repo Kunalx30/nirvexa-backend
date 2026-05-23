@@ -7,6 +7,8 @@ from colorlog import ColoredFormatter
 from app.database.db import init_db
 from app.middleware.rate_limiter import limiter
 from config import config_map
+from app.routes.payment import payment_bp
+from app.routes.usage import usage_bp
 
 from app.services.scheduler import init_scheduler
 
@@ -27,38 +29,33 @@ def create_app(env: str = None) -> Flask:
     # --- Import ALL Models inside app context ---
     with app.app_context():
         from app.models import User, ChatSession, ChatMessage, InterviewSession, InterviewResponse  # noqa
-        from app.models.job import Job         
+        from app.models.job import Job
         from app.models.news_cache import NewsCache         # noqa
         from app.models.saved_job import SavedJob           # noqa
         from app.models.job_alert import JobAlert           # noqa
         from app.models.resume_analysis import ResumeAnalysis  # noqa
         from app.models.resume_template import ResumeTemplate  # noqa
         from app.models.user_resume import UserResume          # noqa
+        from app.models.payment import Payment                 # noqa
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
 
     # --- Initialize CORS ---
-    # Using resources dict so Flask-CORS applies headers on EVERY route
-    # including preflight OPTIONS requests for PUT / DELETE
     CORS(
-    app,
-    resources={r"/api/*": {
-        "origins": [
-            # Web - production (new domain)
-            "https://nyrvexa.in",
-            "https://www.nyrvexa.in",
-            # Web - production (old domain — keep for safety)
-            "https://nyrvexa-frontend.vercel.app",
-            # Web - local dev
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:3000",
-            # Android emulator
-            "http://10.0.2.2",
-            "http://10.0.2.2:5000",
-            "null",
-        ],
+        app,
+        resources={r"/api/*": {
+            "origins": [
+                "https://nyrvexa.in",
+                "https://www.nyrvexa.in",
+                "https://nyrvexa-frontend.vercel.app",
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                "http://10.0.2.2",
+                "http://10.0.2.2:5000",
+                "null",
+            ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
             "allow_headers": [
                 "Content-Type",
@@ -68,7 +65,7 @@ def create_app(env: str = None) -> Flask:
             ],
             "expose_headers": ["Content-Type", "Authorization"],
             "supports_credentials": True,
-            "max_age": 86400,  # Cache preflight for 24h — reduces OPTIONS spam
+            "max_age": 86400,
         }},
     )
 
@@ -78,13 +75,14 @@ def create_app(env: str = None) -> Flask:
     # --- Register Error Handlers ---
     _register_error_handlers(app)
 
-    # --- Initialize Scheduler ---
-    init_scheduler(app)
+    if not app.config.get("TESTING"):
+        # --- Initialize Scheduler ---
+        init_scheduler(app)
 
-    # --- Initialize FAISS Semantic Search Index ---
-    from app.services.rag_pipeline import load_or_build_index
-    load_or_build_index(app)
-    app.logger.info("FAISS index load triggered at startup.")
+        # --- Initialize FAISS Semantic Search Index ---
+        from app.services.rag_pipeline import load_or_build_index
+        load_or_build_index(app)
+        app.logger.info("FAISS index load triggered at startup.")
 
     # --- Health Check ---
     @app.route("/api/health", methods=["GET"])
@@ -128,6 +126,9 @@ def _register_blueprints(app: Flask):
     from app.routes.roadmap_graph import roadmap_graph_bp
     app.register_blueprint(roadmap_graph_bp)
 
+    app.register_blueprint(payment_bp)
+    app.register_blueprint(usage_bp)
+
 
 def _register_error_handlers(app: Flask):
     @app.errorhandler(400)
@@ -136,7 +137,11 @@ def _register_error_handlers(app: Flask):
 
     @app.errorhandler(401)
     def unauthorized(e):
-        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+        # Single handler with CORS headers so browser doesn't block the response
+        response = jsonify({"error": "Unauthorized", "message": "Authentication required"})
+        response.headers.add("Access-Control-Allow-Origin", "http://localhost:5173")
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        return response, 401
 
     @app.errorhandler(403)
     def forbidden(e):

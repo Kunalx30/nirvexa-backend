@@ -68,6 +68,12 @@ class Config:
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day, 50 per hour")
     RATELIMIT_STORAGE_URL = "memory://"
 
+      # Razorpay
+    RAZORPAY_KEY_ID         = os.getenv("RAZORPAY_KEY_ID", "")
+    RAZORPAY_KEY_SECRET     = os.getenv("RAZORPAY_KEY_SECRET", "")
+    RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10
@@ -94,6 +100,7 @@ class TestingConfig(Config):
     """Testing environment — uses separate in-memory DB."""
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
 
 

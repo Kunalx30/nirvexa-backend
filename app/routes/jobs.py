@@ -21,6 +21,7 @@ from app.services.rag_pipeline import (
     get_index_status,
 )
 from app.middleware.auth_middleware import token_required
+from app.middleware.rate_limiter import premium_required
 
 logger = logging.getLogger(__name__)
 jobs_bp = Blueprint("jobs", __name__)
@@ -319,6 +320,7 @@ def delete_saved_job(saved_job_id):
 
 @jobs_bp.route("/alerts", methods=["POST"])
 @token_required
+@premium_required("job_alerts")
 def create_alert():
     data      = request.get_json() or {}
     keywords  = data.get("keywords", [])
@@ -341,6 +343,7 @@ def create_alert():
 
 @jobs_bp.route("/alerts", methods=["GET"])
 @token_required
+@premium_required("job_alerts")
 def get_alerts():
     alerts = JobAlert.query.filter_by(user_id=g.user_id).all()
     return jsonify({

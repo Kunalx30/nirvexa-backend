@@ -5,7 +5,7 @@ from app.database.db import db
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.middleware.auth_middleware import token_required
-from app.middleware.rate_limiter import limiter
+from app.middleware.rate_limiter import limiter, rate_limit
 from app.services.llm_router import route_and_call
 from app.utils.helpers import success_response, error_response
 
@@ -118,6 +118,7 @@ def delete_chat_session(session_id):
 
 @chat_bp.route("/chat", methods=["POST"])
 @token_required
+@rate_limit("chat")
 @limiter.limit("30 per minute")
 def chat():
     """

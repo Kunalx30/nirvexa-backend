@@ -34,6 +34,7 @@ import requests
 from flask import Blueprint, request, jsonify, g
 
 from app.middleware.auth_middleware import token_required
+from app.middleware.rate_limiter import premium_required, rate_limit
 from app.extensions import db
 from app.models.resume_analysis import ResumeAnalysis
 from app.models.resume_template import ResumeTemplate
@@ -187,6 +188,7 @@ def _err(msg: str, code: int = 400):
 
 @resume_bp.route("/analyze", methods=["POST"])
 @token_required
+@rate_limit("resume_analysis")
 def analyze_resume():
     user_id = g.user_id
 
@@ -381,12 +383,14 @@ def _handle_build():
 
 @resume_bp.route("/build", methods=["POST"])
 @token_required
+@premium_required("resume_build")
 def build_resume_endpoint():
     return _handle_build()
 
 
 @resume_bp.route("/build-jd", methods=["POST"])
 @token_required
+@premium_required("resume_build")
 def build_resume_jd():
     return _handle_build()
 
@@ -418,6 +422,7 @@ def enhance_bullets_endpoint():
 
 @resume_bp.route("/compile", methods=["POST"])
 @token_required
+@premium_required("resume_download")
 def compile_latex_endpoint():
     data = request.get_json(silent=True)
     if not data or "latex_code" not in data:
@@ -498,6 +503,7 @@ def delete_resume(resume_id):
 # ─────────────────────────────────────────────────────────────────────────────
 @resume_bp.route("/regenerate/<resume_id>", methods=["POST"])
 @token_required
+@premium_required("resume_build")
 def regenerate_resume(resume_id):
     resume = UserResume.query.get(resume_id)
     if not resume:

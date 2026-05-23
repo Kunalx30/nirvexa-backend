@@ -8,13 +8,13 @@ Register in your app factory:
 import logging
 from flask import Blueprint, jsonify, request
 from app.middleware.auth_middleware import token_required
+from app.middleware.rate_limiter import rate_limit
 
 logger = logging.getLogger(__name__)
 roadmap_graph_bp = Blueprint('roadmap_graph', __name__)
 
 
 @roadmap_graph_bp.route('/api/roadmap-graph/list', methods=['GET'])
-@token_required
 def list_roadmaps():
     """GET /api/roadmap-graph/list — all available roadmaps"""
     try:
@@ -27,6 +27,7 @@ def list_roadmaps():
 
 @roadmap_graph_bp.route('/api/roadmap-graph/search', methods=['GET'])
 @token_required
+@rate_limit("roadmap_search")
 def search_roadmaps():
     """GET /api/roadmap-graph/search?q=python"""
     try:
@@ -41,7 +42,6 @@ def search_roadmaps():
 
 
 @roadmap_graph_bp.route('/api/roadmap-graph/<roadmap_id>', methods=['GET'])
-@token_required
 def get_roadmap(roadmap_id):
     """GET /api/roadmap-graph/python — full graph data"""
     try:
@@ -57,6 +57,7 @@ def get_roadmap(roadmap_id):
 
 @roadmap_graph_bp.route('/api/roadmap-graph/<roadmap_id>/flat', methods=['GET'])
 @token_required
+@rate_limit("roadmap_search")
 def get_flat(roadmap_id):
     """GET /api/roadmap-graph/python/flat — flattened for AI use"""
     try:
