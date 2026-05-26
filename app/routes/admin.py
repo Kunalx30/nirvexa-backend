@@ -156,24 +156,46 @@ def delete_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    db.session.delete(user)
-    db.session.commit()
-    return jsonify({"message": f"User {user.email} deleted successfully"}), 200
+    try:
+        # Delete all dependent records first (foreign key constraints)
+        from app.models.job_alert import JobAlert
+        from app.models.saved_job import SavedJob
+        from app.models.chat_session import ChatSession
+        from app.models.chat_message import ChatMessage
+        from app.models.interview_session import InterviewSession
+        from app.models.interview_response import InterviewResponse
+        from app.models.resume_analysis import ResumeAnalysis
+        from app.models.user_resume import UserResume
+        from app.models.payment import Payment
+        from app.models.support_ticket import SupportTicket
 
+        JobAlert.query.filter_by(user_id=user_id).delete()
+        SavedJob.query.filter_by(user_id=user_id).delete()
+        InterviewResponse.query.filter(
+            InterviewResponse.session_id.in_(
+                db.session.query(InterviewSession.id).filter_by(user_id=user_id)
+            )
+        ).delete(synchronize_session=False)
+        InterviewSession.query.filter_by(user_id=user_id).delete()
+        ChatMessage.query.filter(
+            ChatMessage.session_id.in_(
+                db.session.query(ChatSession.id).filter_by(user_id=user_id)
+            )
+        ).delete(synchronize_session=False)
+        ChatSession.query.filter_by(user_id=user_id).delete()
+        ResumeAnalysis.query.filter_by(user_id=user_id).delete()
+        UserResume.query.filter_by(user_id=user_id).delete()
+        Payment.query.filter_by(user_id=user_id).delete()
+        SupportTicket.query.filter_by(user_id=user_id).delete()
 
-@admin_bp.route("/users/<string:user_id>/premium", methods=["PATCH"])
-@require_admin
-def toggle_premium(user_id):
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"message": f"User {user.email} deleted successfully"}), 200
 
-    data = request.get_json(silent=True) or {}
-    user.is_premium   = data.get("is_premium", not user.is_premium)
-    user.premium_plan = data.get("premium_plan", "pro-monthly") if user.is_premium else None
-    db.session.commit()
-
-    return jsonify({"user": user.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error("[AdminDeleteUser] Failed to delete user %s: %s", user_id, str(e))
+        return jsonify({"error": "Failed to delete user. Check server logs."}), 500
 
 
 # ─────────────────────────────────────────────
