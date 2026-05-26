@@ -276,11 +276,14 @@ def refresh():
     if not user.is_active:
         return error_response("This account has been deactivated", 403)
 
-    # --- Issue new access token ---
+    # --- Issue new access token + fresh profile (premium expiry synced) ---
+    from app.middleware.rate_limiter import _is_premium_active
+
+    _is_premium_active(user)
     new_access_token = generate_access_token(user.id)
 
     return success_response(
-        data={"access_token": new_access_token},
+        data={"access_token": new_access_token, "user": user.to_dict()},
         message="Access token refreshed successfully"
     )
 
@@ -316,6 +319,10 @@ def get_current_user():
     if not user:
         return error_response("User not found", 404)
 
+    from app.middleware.rate_limiter import _is_premium_active
+
+    _is_premium_active(user)
+
     return success_response(
         data={"user": user.to_dict()},
         message="User profile retrieved"
@@ -342,6 +349,14 @@ def update_profile():
         skills = data["skills"]
         if isinstance(skills, list):
             user.skills = [s.strip() for s in skills if isinstance(s, str) and s.strip()]
+
+    if "name" in data:
+        name = (data["name"] or "").strip()
+        if name:
+            user.name = name
+
+    if "avatar_url" in data:
+        user.avatar_url = (data["avatar_url"] or "").strip() or None
 
     if "preferred_location" in data:
         user.preferred_location = (data["preferred_location"] or "").strip() or None

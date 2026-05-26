@@ -142,8 +142,6 @@ def rate_limit(feature: str):
             if current_user is None:
                 return jsonify({"error": "Unauthorized"}), 401
 
-            _ensure_table()
-
             if _is_premium_active(current_user):
                 _increment_usage(current_user.id, feature)
                 return fn(*args, **kwargs)
@@ -191,7 +189,6 @@ def premium_required(feature: str = "premium"):
 
 def get_usage_summary(user) -> dict:
     """Return remaining quota for all features."""
-    _ensure_table()
     if _is_premium_active(user):
         return {
             feature: {

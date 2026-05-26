@@ -3,6 +3,8 @@ app/services/email_service.py
 NyrVexa — Emails via Brevo
 """
 import os, logging, requests
+from datetime import datetime, timezone
+from html import escape
 
 logger = logging.getLogger(__name__)
 
@@ -98,26 +100,33 @@ def _send(to_email: str, to_name: str, subject: str, html: str) -> bool:
 
 
 def send_welcome_email(user_email: str, user_name: str) -> bool:
+    user_name = escape(user_name or "there")
     content = f"""
       <p style="font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;
-                color:#6b6b6b;margin:0 0 12px;">Welcome aboard</p>
+                color:#6b6b6b;margin:0 0 12px;">Welcome to Nyrvexa</p>
 
       <h1 style="font-size:32px;font-weight:400;letter-spacing:-1.5px;color:#0a0a0a;
                  margin:0 0 14px;line-height:1.05;">
-        Your career platform<br>
+        Your career workspace<br>
         <em style="color:#6b6b6b;font-style:italic;">is ready.</em>
       </h1>
 
       <p style="font-size:15px;color:#6b6b6b;line-height:1.6;margin:0 0 28px;font-weight:400;">
-        Hi {user_name}, you're now part of Nyrvexa — India's AI-powered career suite
-        built for modern professionals. Everything you need to land your next role is right here.
+        Hi {user_name}, welcome to Nyrvexa. Your account is active, and you now have
+        a focused workspace to explore roles, improve your resume, prepare for interviews,
+        and plan your next career move with AI.
       </p>
 
-      {_button("Start exploring &rarr;", "https://www.nyrvexa.in")}
+      <p style="font-size:15px;color:#6b6b6b;line-height:1.6;margin:0 0 28px;font-weight:400;">
+        Start with one goal: improve your resume, shortlist better jobs, or prepare for
+        your next interview. Nyrvexa will help you turn that goal into focused action.
+      </p>
+
+      {_button("Open my workspace &rarr;", "https://www.nyrvexa.in")}
       {_divider()}
 
       <p style="font-size:13px;font-weight:600;color:#0a0a0a;margin:0 0 16px;letter-spacing:-0.2px;">
-        Nine tools. One suite.
+        Everything you need to move with clarity
       </p>
 
         <table width="100%" cellpadding="0" cellspacing="0">
@@ -162,13 +171,14 @@ def send_welcome_email(user_email: str, user_name: str) -> bool:
       {_divider()}
 
       <p style="font-size:13px;color:#6b6b6b;margin:0;line-height:1.6;">
-        Questions? Reply to this email or reach us at
+        Need help getting started? Reply to this email or reach us at
         <a href="mailto:team@nyrvexa.in"
-           style="color:#0a0a0a;font-weight:500;text-decoration:none;">team@nyrvexa.in</a>
+           style="color:#0a0a0a;font-weight:500;text-decoration:none;">team@nyrvexa.in</a>.
+        We are glad to have you here.
       </p>
     """
     return _send(user_email, user_name,
-                 "Welcome to Nyrvexa — your career platform is ready", _base(content))
+                 "Welcome to Nyrvexa - your career workspace is ready", _base(content))
 
 
 def send_password_reset(user_email: str, user_name: str, reset_url: str) -> bool:
@@ -202,6 +212,66 @@ def send_password_reset(user_email: str, user_name: str, reset_url: str) -> bool
     """
     return _send(user_email, user_name,
                  "Nyrvexa — reset your password", _base(content))
+
+
+def send_team_admin_otp(admin_email: str, otp_code: str) -> bool:
+    content = f"""
+      <h2 style="margin:0 0 12px;font-size:22px;font-weight:600;color:#0a0a0a;letter-spacing:-0.5px;">
+        Admin sign-in code
+      </h2>
+      <p style="margin:0 0 24px;font-size:15px;color:#6b6b6b;line-height:1.6;">
+        Use this one-time code to access the Nyrvexa job posting dashboard. It expires in 10 minutes.
+      </p>
+      <div style="text-align:center;margin:0 0 28px;">
+        <span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:8px;
+                     color:#0a0a0a;background:#f3f3f3;padding:16px 28px;border-radius:12px;
+                     border:1px solid #e4e4e4;">{otp_code}</span>
+      </div>
+      <p style="margin:0;font-size:13px;color:#a3a3a3;line-height:1.5;">
+        If you did not request this code, you can safely ignore this email.
+      </p>
+    """
+    return _send(admin_email, "Nyrvexa Admin", "Your Nyrvexa admin login code", _base(content))
+
+
+def send_team_admin_login_alert(
+    alert_email: str,
+    admin_email: str,
+    ip_address: str = "Unknown",
+    user_agent: str = "Unknown",
+) -> bool:
+    occurred_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    content = f"""
+      <h2 style="margin:0 0 12px;font-size:22px;font-weight:600;color:#0a0a0a;letter-spacing:-0.5px;">
+        Admin login alert
+      </h2>
+      <p style="margin:0 0 24px;font-size:15px;color:#6b6b6b;line-height:1.6;">
+        A team admin session was created for the Nyrvexa operations console.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+             style="background:#f3f3f3;border:1px solid #e4e4e4;border-radius:8px;margin:0 0 24px;">
+        <tr><td style="padding:14px 18px;border-bottom:1px solid #e4e4e4;">
+          <strong style="font-size:13px;color:#0a0a0a;">Admin email</strong><br>
+          <span style="font-size:13px;color:#6b6b6b;">{escape(admin_email)}</span>
+        </td></tr>
+        <tr><td style="padding:14px 18px;border-bottom:1px solid #e4e4e4;">
+          <strong style="font-size:13px;color:#0a0a0a;">Time</strong><br>
+          <span style="font-size:13px;color:#6b6b6b;">{occurred_at}</span>
+        </td></tr>
+        <tr><td style="padding:14px 18px;border-bottom:1px solid #e4e4e4;">
+          <strong style="font-size:13px;color:#0a0a0a;">IP address</strong><br>
+          <span style="font-size:13px;color:#6b6b6b;">{escape(ip_address)}</span>
+        </td></tr>
+        <tr><td style="padding:14px 18px;">
+          <strong style="font-size:13px;color:#0a0a0a;">Device</strong><br>
+          <span style="font-size:13px;color:#6b6b6b;">{escape(user_agent)}</span>
+        </td></tr>
+      </table>
+      <p style="margin:0;font-size:13px;color:#a3a3a3;line-height:1.5;">
+        If this was not you, rotate the team admin password and review server access immediately.
+      </p>
+    """
+    return _send(alert_email, "Nyrvexa Admin", "Nyrvexa admin login alert", _base(content))
 
 
 def send_job_alert(user_email: str, user_name: str, jobs: list) -> bool:

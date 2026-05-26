@@ -183,6 +183,7 @@ pdfplumber
 
 #for interview Voice
 elevenlabs
+edge-tts==6.1.12
 
 
 gTTS==2.5.4

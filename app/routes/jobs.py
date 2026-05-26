@@ -12,8 +12,11 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models.job import Job
+from app.models.admin_job import AdminJob
 from app.models.saved_job import SavedJob
 from app.models.job_alert import JobAlert
+from app.models.user import User
+from app.middleware.rate_limiter import get_current_user, _is_premium_active
 from app.services.rag_pipeline import (
     search_jobs,
     match_jobs_by_skills,
@@ -191,6 +194,67 @@ def get_jobs():
         "limit":       limit,
         "pages":       (total + limit - 1) // limit,
         "search_mode": "semantic" if (q and faiss_ids) else ("sql_fallback" if q else "browse"),
+    }), 200
+
+
+def _serialize_premium_job(job: AdminJob, unlocked: bool) -> dict:
+    base = {
+        "id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "location": job.location,
+        "job_type": job.job_type,
+        "experience": job.experience,
+        "salary": job.salary,
+        "is_featured": job.is_featured,
+        "category": job.category,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "source": "NirVexa Premium",
+        "locked": not unlocked,
+    }
+    if unlocked:
+        base.update({
+            "company_logo": job.company_logo,
+            "salary": job.salary,
+            "description": job.description,
+            "requirements": job.requirements,
+            "skills": job.skills or [],
+            "apply_url": job.apply_url,
+            "apply_email": job.apply_email,
+            "posted_by": job.posted_by,
+        })
+    return base
+
+
+@jobs_bp.route("/premium", methods=["GET"])
+@token_required
+def get_premium_jobs():
+    """Curated admin-posted jobs. Full details for Pro; preview for free users."""
+    user = get_current_user() or User.query.get(str(g.user_id))
+    unlocked = _is_premium_active(user)
+
+    try:
+        jobs = (
+            AdminJob.query.filter_by(is_active=True)
+            .order_by(AdminJob.is_featured.desc(), AdminJob.created_at.desc())
+            .all()
+        )
+    except Exception as exc:
+        logger.exception("[Premium Jobs] Query failed — ensuring table exists: %s", exc)
+        from app.extensions import db
+        db.create_all()
+        jobs = (
+            AdminJob.query.filter_by(is_active=True)
+            .order_by(AdminJob.is_featured.desc(), AdminJob.created_at.desc())
+            .all()
+        )
+
+    logger.info("[Premium Jobs] Returning %d active listing(s) (unlocked=%s)", len(jobs), unlocked)
+
+    return jsonify({
+        "jobs": [_serialize_premium_job(j, unlocked) for j in jobs],
+        "unlocked": unlocked,
+        "total": len(jobs),
     }), 200
 
 

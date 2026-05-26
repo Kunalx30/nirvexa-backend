@@ -160,7 +160,10 @@ def _groq(system: str, user: str) -> str:
 
 
 def _parse_json(raw: str) -> dict:
-    clean = re.sub(r"```json|```", "", raw).strip()
+    clean = re.sub(r"```json|```", "", raw or "").strip()
+    match = re.search(r"(\{[\s\S]*\})", clean)
+    if match:
+        clean = match.group(1)
     return json.loads(clean)
 
 
@@ -180,6 +183,186 @@ def _ok(data: dict, code: int = 200):
 
 def _err(msg: str, code: int = 400):
     return jsonify({"error": msg}), code
+
+
+def _clamp_score(value, default=0) -> int:
+    try:
+        score = round(float(value))
+    except (TypeError, ValueError):
+        score = default
+    return max(0, min(100, score))
+
+
+def _status_from_score(score: int) -> str:
+    if score >= 85:
+        return "Excellent"
+    if score >= 70:
+        return "Good"
+    if score >= 50:
+        return "Needs Work"
+    return "Poor"
+
+
+def _as_list(value) -> list:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    phrase = (phrase or "").strip().lower()
+    if not phrase:
+        return False
+    pattern = r"(?<![a-z0-9+#.])" + re.escape(phrase) + r"(?![a-z0-9+#.])"
+    return re.search(pattern, text.lower()) is not None
+
+
+def _extract_skills(text: str) -> list:
+    known = [
+        "python", "java", "javascript", "typescript", "react", "angular", "vue", "node.js", "node",
+        "express", "django", "flask", "fastapi", "spring", "sql", "mysql", "postgresql", "mongodb",
+        "redis", "aws", "azure", "gcp", "docker", "kubernetes", "git", "linux", "html", "css",
+        "tailwind", "figma", "rest api", "graphql", "machine learning", "deep learning", "nlp",
+        "pandas", "numpy", "tensorflow", "pytorch", "scikit-learn", "excel", "power bi", "tableau",
+        "data analysis", "statistics", "devops", "ci/cd", "terraform", "jenkins", "c++", "c#",
+        "php", "laravel", "ruby", "go", "rust", "swift", "kotlin", "android", "ios",
+    ]
+    found = [skill for skill in known if _contains_phrase(text, skill)]
+    return sorted(set(found), key=lambda item: (len(item), item))
+
+
+def _extract_jd_keywords(jd_text: str) -> list:
+    skills = _extract_skills(jd_text)
+    explicit = re.findall(r"(?:required|must have|skills?|technologies?|tools?)[:\-\s]+([^\n.;]+)", jd_text, flags=re.I)
+    for group in explicit:
+        for part in re.split(r",|/|\|| and ", group):
+            part = part.strip(" -•\t").lower()
+            if 2 <= len(part) <= 35 and not re.search(r"\b(years?|experience|knowledge|strong|good)\b", part):
+                skills.append(part)
+    return sorted(set(skills), key=lambda item: (len(item), item))
+
+
+def _role_terms(text: str) -> set:
+    roles = {
+        "frontend": ["frontend", "front end", "react developer", "ui developer"],
+        "backend": ["backend", "back end", "api developer"],
+        "fullstack": ["fullstack", "full stack"],
+        "data": ["data analyst", "data scientist", "analytics", "business analyst"],
+        "ml": ["machine learning", "ml engineer", "ai engineer", "prompt engineer"],
+        "devops": ["devops", "site reliability", "sre", "cloud engineer"],
+        "mobile": ["android", "ios", "mobile developer", "flutter", "react native"],
+        "design": ["ui/ux", "ux designer", "product designer"],
+    }
+    lowered = text.lower()
+    return {role for role, terms in roles.items() if any(term in lowered for term in terms)}
+
+
+def _generic_resume_score(resume_text: str) -> tuple[int, dict]:
+    text = resume_text.lower()
+    word_count = len(re.findall(r"\w+", text))
+    sections = ["experience", "education", "skills", "projects"]
+    section_hits = sum(1 for section in sections if section in text)
+    has_contact = bool(re.search(r"[\w.+-]+@[\w.-]+\.\w+", resume_text)) and bool(re.search(r"\+?\d[\d\s().-]{7,}", resume_text))
+    has_metrics = len(re.findall(r"\b\d+%|\b\d+x|\b\d+\+|\b\d{2,}\b", resume_text))
+    skills = _extract_skills(resume_text)
+
+    structure_score = min(30, section_hits * 7 + (2 if word_count >= 250 else 0))
+    contact_score = 10 if has_contact else 4
+    skill_score = min(25, len(skills) * 3)
+    impact_score = min(25, has_metrics * 5)
+    length_score = 10 if 350 <= word_count <= 900 else 6 if 220 <= word_count <= 1100 else 3
+    score = _clamp_score(structure_score + contact_score + skill_score + impact_score + length_score)
+
+    details = {
+        "section_scores": {
+            "structure": structure_score,
+            "contact": contact_score,
+            "skills": skill_score,
+            "impact": impact_score,
+            "length": length_score,
+        },
+        "skills_found": skills,
+    }
+    return score, details
+
+
+def _jd_resume_score(resume_text: str, jd_text: str) -> tuple[int, dict]:
+    required = _extract_jd_keywords(jd_text)
+    matched = [kw for kw in required if _contains_phrase(resume_text, kw)]
+    missing = [kw for kw in required if kw not in matched]
+    keyword_score = round((len(matched) / len(required)) * 40) if required else 0
+
+    resume_roles = _role_terms(resume_text)
+    jd_roles = _role_terms(jd_text)
+    if jd_roles and resume_roles & jd_roles:
+        role_match = "exact"
+        role_score = 25
+    elif jd_roles and resume_roles:
+        role_match = "adjacent"
+        role_score = 12
+    else:
+        role_match = "different"
+        role_score = 5
+
+    experience_hits = sum(1 for kw in matched if re.search(r"(experience|project|built|developed|implemented|worked).*" + re.escape(kw), resume_text, flags=re.I | re.S))
+    experience_score = min(20, round((experience_hits / max(len(required), 1)) * 20) + (5 if matched else 0))
+
+    text = resume_text.lower()
+    standard_sections = sum(1 for section in ("experience", "education", "skills", "projects") if section in text)
+    ats_format_score = min(15, 3 + standard_sections * 3)
+    if re.search(r"\btable\b|\bgraphic\b|\bimage\b", text):
+        ats_format_score = max(0, ats_format_score - 5)
+
+    total = _clamp_score(keyword_score + role_score + experience_score + ats_format_score)
+    return total, {
+        "jd_match_score": total,
+        "role_match": role_match,
+        "section_scores": {
+            "keyword_match": keyword_score,
+            "role_alignment": role_score,
+            "experience_relevance": experience_score,
+            "ats_format": ats_format_score,
+        },
+        "matched_keywords": matched,
+        "missing_keywords": missing,
+        "skills_found": _extract_skills(resume_text),
+    }
+
+
+def _normalize_analysis(data: dict, resume_text: str, jd_text: str) -> dict:
+    data = data if isinstance(data, dict) else {}
+    if jd_text:
+        score, details = _jd_resume_score(resume_text, jd_text)
+        missing = details["missing_keywords"]
+        matched = details["matched_keywords"]
+        data.update(details)
+        data["overall_score"] = score
+        data["ats_status"] = _status_from_score(score)
+        data["strengths"] = _as_list(data.get("strengths"))[:3] or [
+            f"Matched {len(matched)} required JD keyword(s).",
+            "Resume text was readable by the parser.",
+            "Existing content can be tailored toward the target role.",
+        ]
+        data["improvements"] = _as_list(data.get("improvements"))[:3] or [
+            "Add missing required JD skills with honest project or work evidence.",
+            "Align the headline and recent projects with the exact target role.",
+            "Use quantified bullets that connect tools to outcomes.",
+        ]
+        data["ats_issues"] = _as_list(data.get("ats_issues")) or ([] if details["section_scores"]["ats_format"] >= 12 else ["Missing or unclear standard resume sections."])
+        data["recommended_additions"] = _as_list(data.get("recommended_additions")) or [f"Add evidence for: {kw}" for kw in missing[:5]]
+        return data
+
+    score, details = _generic_resume_score(resume_text)
+    data["overall_score"] = score
+    data["ats_status"] = _status_from_score(score)
+    data["skills_found"] = details["skills_found"] or _as_list(data.get("skills_found"))
+    data["strengths"] = _as_list(data.get("strengths"))[:3] or ["Resume text is parseable", "Core sections are partially present", "Skills can be extracted from the document"]
+    data["improvements"] = _as_list(data.get("improvements"))[:3] or ["Add stronger quantified achievements", "Include standard sections: Experience, Projects, Skills, Education", "Add role-specific keywords from the jobs you are targeting"]
+    data["missing_keywords"] = _as_list(data.get("missing_keywords"))
+    data["section_scores"] = details["section_scores"]
+    return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,6 +410,7 @@ def analyze_resume():
     except Exception as e:
         logger.error(f"[Analyze] JSON parse failed: {e}\nRaw: {raw[:300]}")
         return _err("Could not parse AI response. Try again.", 500)
+    data = _normalize_analysis(data, resume_text, jd_text)
 
     # Save to DB using existing ResumeAnalysis model — columns unchanged
     analysis = None
@@ -257,6 +441,7 @@ def analyze_resume():
         "strengths":        data.get("strengths", []),
         "improvements":     data.get("improvements", []),
         "missing_keywords": data.get("missing_keywords", []),
+        "section_scores":   data.get("section_scores", {}),
         "model_used":       "groq/llama-3.3-70b-versatile",
         "jd_mode":          bool(jd_text),
     }
@@ -264,6 +449,7 @@ def analyze_resume():
     if jd_text:
         response.update({
             "jd_match_score":       data.get("jd_match_score"),
+            "role_match":           data.get("role_match"),
             "matched_keywords":     data.get("matched_keywords", []),
             "ats_issues":           data.get("ats_issues", []),
             "recommended_additions": data.get("recommended_additions", []),

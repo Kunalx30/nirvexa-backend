@@ -5,7 +5,7 @@ NyrVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI
 import logging
 from flask import Blueprint, jsonify, request, send_file, g
 from app.middleware.auth_middleware import token_required
-from app.middleware.rate_limiter import rate_limit
+from app.middleware.rate_limiter import premium_required
 import io
 from app.services.tts_service import text_to_speech
 
@@ -89,7 +89,7 @@ def text_evaluate():
 
 @interview_bp.route('/generate', methods=['POST'])
 @token_required
-@rate_limit("interview")
+@premium_required("interview")
 def generate():
     """
     POST /api/interview/generate
@@ -134,6 +134,59 @@ def generate():
         return jsonify({'error': 'Failed to generate interview questions'}), 500
 
 
+@interview_bp.route('/start', methods=['POST'])
+@token_required
+@premium_required("interview")
+def start_conversational_interview():
+    """
+    POST /api/interview/start
+    Body: { "job_role": str, "experience_level": str, "user_name": str }
+    Returns the separate interviewer app style plan: greeting + question metadata.
+    """
+    try:
+        data = request.get_json() or {}
+        job_role = (data.get('job_role') or data.get('role') or 'Software Engineer').strip()
+        experience_level = (data.get('experience_level') or data.get('difficulty') or 'fresher').strip().lower()
+        user_name = (data.get('user_name') or 'there').strip()
+
+        from app.services.interview_service import generate_interview_plan
+        result = generate_interview_plan(job_role, experience_level, user_name)
+        if not result['success']:
+            return jsonify({'error': result['error']}), 500
+        return jsonify(result['data']), 200
+    except Exception as e:
+        logger.error("[Interview Route] POST /start failed: %s", e)
+        return jsonify({'error': 'Failed to start interview'}), 500
+
+
+@interview_bp.route('/react', methods=['POST'])
+@token_required
+@premium_required("interview")
+def react_to_conversational_answer():
+    """
+    POST /api/interview/react
+    Body: { job_role, question, user_answer, question_index, total_questions, all_qa }
+    Returns a natural Anya reaction and transition.
+    """
+    try:
+        data = request.get_json() or {}
+        from app.services.interview_service import generate_reaction_and_question
+        result = generate_reaction_and_question(
+            job_role=(data.get('job_role') or data.get('role') or 'Software Engineer').strip(),
+            question=(data.get('question') or '').strip(),
+            user_answer=(data.get('user_answer') or data.get('answer') or '').strip(),
+            question_index=int(data.get('question_index') or 0),
+            total_questions=int(data.get('total_questions') or 15),
+            all_qa=data.get('all_qa') or [],
+        )
+        if not result['success']:
+            return jsonify({'error': result['error']}), 500
+        return jsonify(result['data']), 200
+    except Exception as e:
+        logger.error("[Interview Route] POST /react failed: %s", e)
+        return jsonify({'error': 'Failed to process answer'}), 500
+
+
 @interview_bp.route('/evaluate', methods=['POST'])
 @token_required
 def evaluate():
@@ -153,6 +206,17 @@ def evaluate():
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body is required'}), 400
+
+        if isinstance(data.get('all_qa'), list):
+            from app.services.interview_service import generate_full_interview_evaluation
+            result = generate_full_interview_evaluation(
+                job_role=(data.get('job_role') or data.get('role') or 'Software Engineer').strip(),
+                experience_level=(data.get('experience_level') or 'fresher').strip().lower(),
+                all_qa=data.get('all_qa') or [],
+            )
+            if not result['success']:
+                return jsonify({'error': result['error']}), 500
+            return jsonify(result['data']), 200
 
         question         = (data.get('question') or '').strip()
         transcript       = (data.get('transcript') or '').strip()
@@ -190,6 +254,7 @@ def evaluate():
 
 @interview_bp.route('/session', methods=['POST'])
 @token_required
+@premium_required("interview")
 def create_session():
     """
     POST /api/interview/session

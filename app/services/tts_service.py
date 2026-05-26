@@ -4,15 +4,20 @@ NyrVexa — TTS with ElevenLabs primary, edge-tts free fallback.
 """
 import os
 import asyncio
+import io
 import logging
 import tempfile
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
 ELEVENLABS_API_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_MODEL_ID  = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
 ELEVENLABS_TIMEOUT   = float(os.environ.get("ELEVENLABS_TIMEOUT", "30"))
+TTS_POOL_SIZE        = int(os.environ.get("TTS_POOL_SIZE", "16"))
+TTS_SPEED            = float(os.environ.get("TTS_SPEED", "1.3"))
+_tts_executor        = ThreadPoolExecutor(max_workers=TTS_POOL_SIZE, thread_name_prefix="tts")
 
 # Only free/non-library ElevenLabs voice IDs work on the free tier.
 # "Rachel" (21m00Tcm4TlvDq8ikWAM) is a built-in free voice.
@@ -77,6 +82,34 @@ def _edge_tts_sync(text: str, voice: str) -> bytes:
             return loop.run_until_complete(_edge_tts_async(text, voice))
     except Exception:
         return asyncio.run(_edge_tts_async(text, voice))
+
+
+# ── gTTS compatibility fallback from the standalone Anya interviewer ─────────
+
+def _gtts_tts(text: str) -> bytes:
+    from gtts import gTTS
+
+    buf = io.BytesIO()
+    gTTS(text=text, lang="en", tld="co.in", slow=False).write_to_fp(buf)
+    buf.seek(0)
+
+    try:
+        from pydub import AudioSegment
+
+        audio = AudioSegment.from_mp3(buf)
+        fast_audio = audio._spawn(
+            audio.raw_data,
+            overrides={"frame_rate": int(audio.frame_rate * TTS_SPEED)},
+        ).set_frame_rate(audio.frame_rate)
+
+        out = io.BytesIO()
+        fast_audio.export(out, format="mp3")
+        out.seek(0)
+        return out.read()
+    except Exception as e:
+        logger.warning("[TTS] gTTS speedup failed (%s), using original speed", e)
+        buf.seek(0)
+        return buf.read()
 
 
 # ── ElevenLabs primary ───────────────────────────────────────────────────────
@@ -145,5 +178,27 @@ def text_to_speech(text: str, voice: str = "ananya") -> bytes:
         logger.info("[TTS] Using edge-tts voice: %s", EDGE_VOICES.get(voice, EDGE_FALLBACK))
         return _edge_tts_sync(text, voice)
     except Exception as e:
-        logger.error("[TTS] edge-tts also failed: %s", e)
+        logger.warning("[TTS] edge-tts failed (%s), falling back to gTTS", e)
+
+    try:
+        logger.info("[TTS] Using gTTS Indian English fallback")
+        return _gtts_tts(text)
+    except Exception as e:
+        logger.error("[TTS] gTTS also failed: %s", e)
         raise RuntimeError(f"All TTS providers failed. Last error: {e}")
+
+
+async def synthesize_speech(text: str, voice: str = "ananya", **_kwargs):
+    loop = asyncio.get_running_loop()
+    audio = await loop.run_in_executor(_tts_executor, text_to_speech, text, voice)
+    return audio, "audio/mpeg"
+
+
+def tts_status() -> dict:
+    return {
+        "provider": "ElevenLabs -> edge-tts -> gTTS",
+        "edge_voice": EDGE_VOICES.get("ananya"),
+        "gtts_speed": TTS_SPEED,
+        "accent": "Indian English",
+        "free_fallback": True,
+    }

@@ -1,6 +1,7 @@
 import logging
 import os
-from flask import Flask, jsonify
+import io
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from colorlog import ColoredFormatter
 
@@ -37,6 +38,11 @@ def create_app(env: str = None) -> Flask:
         from app.models.resume_template import ResumeTemplate  # noqa
         from app.models.user_resume import UserResume          # noqa
         from app.models.payment import Payment                 # noqa
+        from app.models.support_ticket import SupportTicket     # noqa
+        from app.models.admin_job import AdminJob               # noqa
+        from app.extensions import db
+        db.create_all()
+        app.logger.info("Database tables verified (including admin_jobs).")
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
@@ -94,6 +100,29 @@ def create_app(env: str = None) -> Flask:
             "environment": env,
         }), 200
 
+    @app.route("/api/tts", methods=["POST"])
+    def standalone_interviewer_tts():
+        """Compatibility endpoint from the standalone Anya interviewer app."""
+        data = request.get_json(silent=True) or {}
+        text = (data.get("text") or "").strip()
+        voice = (data.get("voice") or "ananya").strip().lower()
+
+        if not text or len(text) > 3000:
+            return jsonify({"error": "Invalid text length"}), 400
+
+        try:
+            from app.services.tts_service import text_to_speech
+            audio_bytes = text_to_speech(text, voice=voice)
+            return send_file(
+                io.BytesIO(audio_bytes),
+                mimetype="audio/mpeg",
+                as_attachment=False,
+                download_name="speech.mp3",
+            )
+        except Exception as e:
+            app.logger.error("[TTS] POST /api/tts failed: %s", e)
+            return jsonify({"error": "Failed to generate speech"}), 500
+
     app.logger.info(f"NirVexa backend started in [{env}] mode")
     return app
 
@@ -129,6 +158,9 @@ def _register_blueprints(app: Flask):
     app.register_blueprint(payment_bp)
     app.register_blueprint(usage_bp)
 
+    from app.routes.admin import admin_bp
+    app.register_blueprint(admin_bp)
+
 
 def _register_error_handlers(app: Flask):
     @app.errorhandler(400)
@@ -137,10 +169,20 @@ def _register_error_handlers(app: Flask):
 
     @app.errorhandler(401)
     def unauthorized(e):
-        # Single handler with CORS headers so browser doesn't block the response
+        from flask import request
         response = jsonify({"error": "Unauthorized", "message": "Authentication required"})
-        response.headers.add("Access-Control-Allow-Origin", "http://localhost:5173")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
+        origin = request.headers.get("Origin")
+        allowed = app.config.get("CORS_ORIGINS") or [
+            "https://nyrvexa.in",
+            "https://www.nyrvexa.in",
+            "https://nyrvexa-frontend.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+        ]
+        if origin in allowed:
+            response.headers.add("Access-Control-Allow-Origin", origin)
+            response.headers.add("Access-Control-Allow-Credentials", "true")
         return response, 401
 
     @app.errorhandler(403)

@@ -1,9 +1,15 @@
 from flask import Blueprint, request, jsonify
 from app.middleware.auth_middleware import token_required
 from app.middleware.rate_limiter import get_current_user
-from app.services.payment_service import create_order, verify_and_activate, handle_webhook
+from app.services.payment_service import create_order, verify_and_activate, handle_webhook, get_plans_catalog
 
 payment_bp = Blueprint("payment", __name__, url_prefix="/api/payment")
+
+
+@payment_bp.route("/plans", methods=["GET"])
+def list_plans():
+    """Public pricing catalog for the marketing and checkout UI."""
+    return jsonify(get_plans_catalog()), 200
 
 
 @payment_bp.route("/create-order", methods=["POST"])

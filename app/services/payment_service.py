@@ -22,6 +22,44 @@ PLANS = {
 }
 
 
+def get_plans_catalog() -> dict:
+    """Serialize plan prices for the frontend (no secrets)."""
+    from app.middleware.rate_limiter import FREE_LIMITS, FEATURE_LABELS
+
+    plans = {}
+    monthly_inr = PLANS["monthly"]["amount"] // 100
+    for key, info in PLANS.items():
+        price_inr = info["amount"] // 100
+        entry = {
+            "id": key,
+            "label": info["label"],
+            "price_inr": price_inr,
+            "amount_paise": info["amount"],
+            "duration_days": info["duration_days"],
+            "period": "/ month" if key == "monthly" else "/ year",
+            "badge": None,
+            "effective_monthly": None,
+            "savings_percent": None,
+        }
+        if key == "yearly":
+            entry["badge"] = "Best value"
+            entry["effective_monthly"] = round(price_inr / 12)
+            entry["savings_percent"] = max(
+                0,
+                round((1 - (price_inr / 12) / monthly_inr) * 100),
+            )
+        plans[key] = entry
+
+    free_limits = [
+        {"feature": FEATURE_LABELS.get(k, k), "limit": f"{v} / day" if v else "Pro only"}
+        for k, v in FREE_LIMITS.items()
+    ]
+    free_limits.append({"feature": "Voice mock interview", "limit": "Pro only"})
+    free_limits.append({"feature": "Resume PDF export", "limit": "Pro only"})
+
+    return {"plans": plans, "free_limits": free_limits}
+
+
 def get_razorpay_client():
     return razorpay.Client(
         auth=(
@@ -91,6 +129,16 @@ def verify_and_activate(
     payment = Payment.query.filter_by(razorpay_order_id=razorpay_order_id).first()
     if not payment:
         raise ValueError("Order not found")
+
+    if payment.status == "paid":
+        user = User.query.get(payment.user_id)
+        return {
+            "status": "success",
+            "plan": payment.plan,
+            "expiry": user.premium_expiry.isoformat() if user and user.premium_expiry else None,
+            "method": payment.payment_method,
+            "already_paid": True,
+        }
 
     # 3. Fetch extra details from Razorpay (method, UPI txn id)
     client = get_razorpay_client()

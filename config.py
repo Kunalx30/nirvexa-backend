@@ -34,6 +34,9 @@ class Config:
     DEEPSEEK_API_KEY    = os.getenv("DEEPSEEK_API_KEY")
     GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY")
     MISTRAL_API_KEY     = os.getenv("MISTRAL_API_KEY")
+    GROQ_INTERVIEW_API_KEY    = os.getenv("GROQ_INTERVIEW_API_KEY") or os.getenv("GROQ_API_KEY_2")
+    GEMINI_INTERVIEW_API_KEY  = os.getenv("GEMINI_INTERVIEW_API_KEY") or os.getenv("GEMINI_API_KEY_2")
+    MISTRAL_INTERVIEW_API_KEY = os.getenv("MISTRAL_INTERVIEW_API_KEY") or os.getenv("MISTRAL_API_KEY_2")
 
     # AI Model Names
     GROQ_MODEL_FAST     = "llama-3.3-70b-versatile"
@@ -72,6 +75,13 @@ class Config:
     RAZORPAY_KEY_ID         = os.getenv("RAZORPAY_KEY_ID", "")
     RAZORPAY_KEY_SECRET     = os.getenv("RAZORPAY_KEY_SECRET", "")
     RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+
+    # Team admin (job posting dashboard) — /teamadmin on frontend
+    TEAM_ADMIN_EMAIL    = os.getenv("TEAM_ADMIN_EMAIL", "team@nyrvexa.in").strip()
+    TEAM_ADMIN_PASSWORD = os.getenv("TEAM_ADMIN_PASSWORD", "").strip()
+    TEAM_ADMIN_ALERT_EMAIL = os.getenv("TEAM_ADMIN_ALERT_EMAIL", TEAM_ADMIN_EMAIL).strip()
+    # Local dev only: fixed OTP when email is not configured (never set in production)
+    TEAM_ADMIN_DEV_OTP   = os.getenv("TEAM_ADMIN_DEV_OTP", "").strip()
 
 
     # Interview AI Config

@@ -5,14 +5,32 @@ NyrVexa — Phase 6.6 + 6B: Text Interview Prep + Voice Interview AI Service
 import logging
 import json
 import uuid
+import re
 from datetime import datetime, timezone
 
+import google.generativeai as genai
+import groq as groq_sdk
 import openai
 from flask import current_app
+from mistralai import Mistral
 from app.extensions import db
 from app.models import InterviewSession, InterviewResponse
 
 logger = logging.getLogger(__name__)
+
+
+INTERVIEWER_PERSONA = """You are Anya, a professional senior HR & technical interviewer at a top Indian tech company.
+
+Your personality:
+- Warm but professional — like a real Indian woman interviewer
+- Encouraging after good answers, gently probing after weak ones
+- Natural conversational style — not robotic, not scripted
+- Uses natural Indian English patterns occasionally, such as "so", "right", "absolutely", and "that's good"
+- Asks follow-up probes naturally
+- NEVER repeats the exact same reaction twice
+
+Your role: conduct a realistic job interview that feels like a real human conversation.
+The candidate wants a real interview experience, not a simulation."""
 
 
 # ── Phase 6.6 — Text Interview Prep ──────────────────────────────────────────
@@ -64,17 +82,13 @@ Rules:
 - what_interviewer_wants must be concise — one sentence max"""
 
     try:
-        client = _deepseek_client()
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are an interview coach. Always respond with valid JSON only. No markdown, no backticks."},
-                {"role": "user", "content": prompt}
-            ],
+        result = _call_llm_json(
+            prompt,
+            "You are an interview coach. Always respond with valid JSON only. No markdown, no backticks.",
             max_tokens=1500,
             temperature=0.7,
+            prefer_deepseek=True,
         )
-        result = _parse_json(response)
         return {"success": True, "questions": result}
 
     except json.JSONDecodeError as e:
@@ -113,17 +127,13 @@ Rules:
 - verdict: Strong if score >= 80, Acceptable if 60-79, Needs Work if below 60"""
 
     try:
-        client = _deepseek_client()
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are an interview evaluator. Always respond with valid JSON only. No markdown, no backticks."},
-                {"role": "user", "content": prompt}
-            ],
+        result = _call_llm_json(
+            prompt,
+            "You are an interview evaluator. Always respond with valid JSON only. No markdown, no backticks.",
             max_tokens=1024,
             temperature=0.3,
+            prefer_deepseek=True,
         )
-        result = _parse_json(response)
         return {"success": True, "data": result}
 
     except json.JSONDecodeError as e:
@@ -179,24 +189,12 @@ Respond ONLY with a valid JSON array of strings. No preamble, no markdown, no ba
 ["Question 1?", "Question 2?", "Question 3?"]"""
 
     try:
-        client = _deepseek_client()
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are an interview question generator. Always respond with a valid JSON array of strings only. No markdown, no backticks."},
-                {"role": "user", "content": prompt}
-            ],
+        questions = _call_llm_json(
+            prompt,
+            "You are an interview question generator. Always respond with a valid JSON array of strings only. No markdown, no backticks.",
             max_tokens=1500,
             temperature=0.7,
         )
-        raw = response.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
-
-        questions = json.loads(raw)
         if not isinstance(questions, list):
             raise ValueError("Response is not a list")
         questions = _ensure_self_intro_question(questions)
@@ -267,18 +265,14 @@ Scoring rules:
 - filler_feedback: {filler_count} fillers detected — comment appropriately"""
 
     try:
-        client = _deepseek_client()
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are a voice interview evaluator. Always respond with valid JSON only. No markdown, no backticks."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1200,
-            temperature=0.3,
-        )
         result = _normalize_voice_evaluation(
-            _parse_json(response),
+            _call_llm_json(
+                prompt,
+                "You are a voice interview evaluator. Always respond with valid JSON only. No markdown, no backticks.",
+                max_tokens=1200,
+                temperature=0.3,
+                prefer_deepseek=True,
+            ),
             wpm=wpm,
             filler_count=filler_count,
             transcript=transcript,
@@ -293,6 +287,193 @@ Scoring rules:
     except Exception as e:
         logger.error("[InterviewService] evaluate_voice_answer failed: %s", e)
         return {"success": False, "error": "Failed to evaluate answer. Please try again."}
+
+
+def generate_interview_plan(job_role: str, experience_level: str, user_name: str) -> dict:
+    prompt = f"""You are interviewing {user_name or 'the candidate'} for a {job_role} role ({experience_level} level).
+
+Generate a natural interview opening greeting AND a full question plan.
+
+Return ONLY valid JSON (no markdown, no explanation):
+{{
+  "greeting": "<2-3 sentence warm, natural greeting introducing yourself as Anya, mention the role, make the candidate feel at ease — vary the wording each time, don't be robotic>",
+  "questions": [
+    {{
+      "id": 1,
+      "text": "<the interview question — phrased naturally as a human interviewer would ask>",
+      "type": "hr|technical|situational|cultural|closing",
+      "category": "<specific sub-topic like 'introduction', 'python', 'data structures', 'conflict resolution', etc>",
+      "follow_up_hint": "<what Anya should probe if answer is weak or vague>"
+    }}
+  ]
+}}
+
+Question mix for {job_role} ({experience_level}):
+- 1 introduction question
+- 4-5 technical core questions specific to {job_role}
+- 2-3 technical depth questions
+- 3 HR/behavioral questions
+- 2 situational questions
+- 1 cultural fit / motivation question
+- 1 salary / notice period / availability question
+- 1 closing (do you have questions for us)
+
+Total: 15-17 questions. Make them SPECIFIC to {job_role}, not generic. Each question should sound exactly how a human interviewer would say it out loud."""
+
+    try:
+        data = _call_llm_json(prompt, INTERVIEWER_PERSONA, max_tokens=3000, temperature=0.85)
+        if not isinstance(data, dict) or "greeting" not in data or "questions" not in data:
+            raise ValueError("Invalid interview plan structure")
+        questions = data.get("questions") or []
+        data["questions"] = [
+            {
+                "id": idx + 1,
+                "text": str(q.get("text") if isinstance(q, dict) else q).strip(),
+                "type": (q.get("type") if isinstance(q, dict) else "hr") or "hr",
+                "category": (q.get("category") if isinstance(q, dict) else f"question {idx + 1}") or f"question {idx + 1}",
+                "follow_up_hint": (q.get("follow_up_hint") if isinstance(q, dict) else "") or "",
+            }
+            for idx, q in enumerate(questions)
+            if str(q.get("text") if isinstance(q, dict) else q).strip()
+        ]
+        data["questions"] = _ensure_plan_intro_question(data["questions"])
+        data["questions"] = _ensure_minimum_plan_questions(data["questions"], job_role, min_count=12)
+        if len(data["questions"]) > 17:
+            data["questions"] = data["questions"][:17]
+            for idx, question in enumerate(data["questions"]):
+                question["id"] = idx + 1
+        data["greeting"] = _ensure_named_greeting(data.get("greeting", ""), user_name, job_role)
+        data["total"] = len(data["questions"])
+        data["job_role"] = job_role
+        data["experience_level"] = experience_level
+        return {"success": True, "data": data}
+    except Exception as e:
+        logger.error("[InterviewService] generate_interview_plan failed: %s", e)
+        return {"success": False, "error": "Failed to start interview. Please try again."}
+
+
+def generate_reaction_and_question(
+    job_role: str,
+    question: str,
+    user_answer: str,
+    question_index: int,
+    total_questions: int,
+    all_qa: list,
+) -> dict:
+    is_last = question_index >= total_questions - 1
+    recent = (all_qa or [])[-3:]
+    context_str = "\n".join([f"Q: {qa.get('question', '')}\nA: {qa.get('answer', '')}" for qa in recent])
+
+    if is_last:
+        prompt = f"""Job role: {job_role}
+Last question asked: "{question}"
+Candidate's answer: "{user_answer}"
+
+This was the FINAL question. Generate a warm, natural closing reaction from Anya (2-3 sentences max).
+Tell the candidate the interview is complete and you'll be sharing feedback shortly.
+
+Return ONLY valid JSON:
+{{
+  "reaction": "<warm closing reaction — thank the candidate, say you'll compile feedback>",
+  "next_question": null,
+  "is_last": true
+}}"""
+    else:
+        prompt = f"""Job role: {job_role}
+Recent conversation:
+{context_str}
+
+Current question asked: "{question}"
+Candidate's answer: "{user_answer}"
+This is question {question_index + 1} of {total_questions}.
+
+As Anya, generate:
+1. A brief natural reaction to this specific answer (1-2 sentences ONLY — acknowledge what they said, good or needs improvement, BE SPECIFIC to their answer, never generic)
+2. A smooth natural transition to the next question (1 sentence connector like "Moving on..." or "That's a good point, now let me ask you...")
+
+Vary your reactions — don't always say "Great answer!" Use: "Interesting...", "That makes sense...", "I see, so you...", "Right, and...", "That's a solid approach...", "Good, I like that you mentioned...", etc.
+
+Return ONLY valid JSON:
+{{
+  "reaction": "<specific reaction to their answer>",
+  "transition": "<natural bridge to next question>",
+  "next_question": null,
+  "is_last": false
+}}
+
+Note: next_question will be injected from the pre-planned list — return null for it."""
+
+    try:
+        data = _call_llm_json(prompt, INTERVIEWER_PERSONA, max_tokens=500, temperature=0.9)
+        data["is_last"] = is_last
+        return {"success": True, "data": data}
+    except Exception as e:
+        logger.error("[InterviewService] generate_reaction_and_question failed: %s", e)
+        return {"success": False, "error": "Failed to process answer. Please try again."}
+
+
+def generate_full_interview_evaluation(job_role: str, experience_level: str, all_qa: list) -> dict:
+    all_qa = _clean_all_qa(all_qa)
+    qa_text = "\n\n".join([
+        f"Q{i + 1}: {qa.get('question', '')}\nAnswer: {qa.get('answer', '[No answer given]')}"
+        for i, qa in enumerate(all_qa)
+    ])
+
+    prompt = f"""You interviewed a candidate for {job_role} ({experience_level} level).
+
+Here is the complete interview transcript:
+{qa_text}
+
+Provide a comprehensive evaluation. Return ONLY valid JSON:
+{{
+  "overall_score": <0-100 integer>,
+  "hire_recommendation": "Strong Yes | Yes | Maybe | No",
+  "summary": "<3-4 sentence honest overall summary specific to this interview>",
+  "scores": {{
+    "technical_knowledge": <0-100>,
+    "communication_clarity": <0-100>,
+    "confidence": <0-100>,
+    "answer_relevance": <0-100>,
+    "problem_solving": <0-100>,
+    "cultural_fit": <0-100>
+  }},
+  "strengths": ["<specific strength with example>", "<specific strength>", "<specific strength>"],
+  "improvements": [
+    {{
+      "area": "<specific area>",
+      "issue": "<what exactly was weak or missing>",
+      "how_to_fix": "<concrete actionable advice>",
+      "resource": "<specific course/book/practice method>"
+    }}
+  ],
+  "per_question": [
+    {{
+      "question_number": 1,
+      "question": "<question text>",
+      "score": <0-10>,
+      "feedback": "<specific feedback>",
+      "what_was_good": "<if anything>",
+      "what_was_missing": "<if anything>"
+    }}
+  ],
+  "next_steps": ["<priority action 1>", "<priority action 2>", "<priority action 3>"],
+  "motivational_note": "<encouraging closing note from Anya>"
+}}"""
+
+    try:
+        data = _call_llm_json(
+            prompt,
+            "You are Anya, an expert interviewer and career coach. Provide honest, detailed, actionable evaluation. Be specific — no generic advice. Your evaluation should feel like genuine professional feedback, not automated scoring.",
+            max_tokens=4000,
+            temperature=0.7,
+            prefer_deepseek=True,
+        )
+        return {"success": True, "data": _normalize_full_interview_evaluation(data, job_role, experience_level, all_qa)}
+    except Exception as e:
+        logger.error("[InterviewService] generate_full_interview_evaluation failed: %s", e)
+        fallback = _normalize_full_interview_evaluation({}, job_role, experience_level, all_qa)
+        fallback["evaluation_source"] = "deterministic_fallback"
+        return {"success": True, "data": fallback}
 
 
 def create_interview_session(
@@ -407,6 +588,218 @@ def delete_interview_session(session_id: str, user_id: str) -> dict:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _clean_all_qa(all_qa: list) -> list[dict]:
+    cleaned = []
+    for idx, qa in enumerate(all_qa or []):
+        if not isinstance(qa, dict):
+            continue
+        question = str(qa.get("question") or qa.get("question_text") or f"Question {idx + 1}").strip()
+        answer = str(qa.get("answer") or qa.get("user_answer") or qa.get("transcript") or "").strip()
+        if question or answer:
+            cleaned.append({"question": question, "answer": answer})
+    return cleaned
+
+
+def _answer_quality_score(question: str, answer: str) -> int:
+    answer = (answer or "").strip()
+    words = re.findall(r"[A-Za-z][A-Za-z0-9+#.-]*", answer.lower())
+    if not words:
+        return 0
+
+    word_count = len(words)
+    unique_ratio = len(set(words)) / max(word_count, 1)
+    score = 25
+    score += min(25, round(word_count * 0.45))
+    score += 15 if any(ch.isdigit() for ch in answer) else 0
+    score += 10 if any(token in answer.lower() for token in ("because", "therefore", "result", "impact", "improved", "reduced", "built", "designed")) else 0
+    score += 10 if word_count >= 45 and "." in answer else 0
+    if word_count < 12:
+        score -= 20
+    if unique_ratio < 0.45:
+        score -= 10
+    return _clamp_score(score)
+
+
+def _recommendation_from_score(score: int) -> str:
+    if score >= 85:
+        return "Strong Yes"
+    if score >= 72:
+        return "Yes"
+    if score >= 55:
+        return "Maybe"
+    return "No"
+
+
+def _normalize_full_interview_evaluation(data: dict, job_role: str, experience_level: str, all_qa: list) -> dict:
+    data = data if isinstance(data, dict) else {}
+    per_question = []
+    question_scores = []
+    ai_per_question = data.get("per_question") if isinstance(data.get("per_question"), list) else []
+
+    for idx, qa in enumerate(all_qa or []):
+        deterministic_score = round(_answer_quality_score(qa.get("question", ""), qa.get("answer", "")) / 10)
+        ai_item = ai_per_question[idx] if idx < len(ai_per_question) and isinstance(ai_per_question[idx], dict) else {}
+        try:
+            score_10 = round(float(ai_item.get("score", deterministic_score) or deterministic_score))
+        except (TypeError, ValueError):
+            score_10 = deterministic_score
+        score_10 = max(0, min(10, score_10))
+        if not qa.get("answer"):
+            score_10 = 0
+        question_scores.append(score_10 * 10)
+        per_question.append({
+            "question_number": idx + 1,
+            "question": ai_item.get("question") or qa.get("question") or f"Question {idx + 1}",
+            "score": score_10,
+            "feedback": ai_item.get("feedback") or ("Answer was too short to judge." if not qa.get("answer") else "The answer was scored for relevance, detail, structure, and evidence."),
+            "what_was_good": ai_item.get("what_was_good") or ("Clear attempt to answer the question." if score_10 >= 5 else ""),
+            "what_was_missing": ai_item.get("what_was_missing") or ("Add a specific example, measurable result, and clearer role-specific details." if score_10 < 8 else "Minor polish in concision and evidence."),
+        })
+
+    if not question_scores:
+        question_scores = [0]
+
+    avg = round(sum(question_scores) / len(question_scores))
+    scores = data.get("scores") if isinstance(data.get("scores"), dict) else {}
+    normalized_scores = {
+        "technical_knowledge": _clamp_score(scores.get("technical_knowledge"), avg),
+        "communication_clarity": _clamp_score(scores.get("communication_clarity"), avg),
+        "confidence": _clamp_score(scores.get("confidence"), max(0, avg - 5)),
+        "answer_relevance": _clamp_score(scores.get("answer_relevance"), avg),
+        "problem_solving": _clamp_score(scores.get("problem_solving"), max(0, avg - 8)),
+        "cultural_fit": _clamp_score(scores.get("cultural_fit"), avg),
+    }
+    overall = _clamp_score(data.get("overall_score"), round(sum(normalized_scores.values()) / len(normalized_scores)))
+
+    return {
+        "success": True,
+        "job_role": job_role,
+        "experience_level": experience_level,
+        "overall_score": overall,
+        "hire_recommendation": data.get("hire_recommendation") or _recommendation_from_score(overall),
+        "summary": data.get("summary") or f"This {job_role} interview was scored from {len(all_qa or [])} answered question(s). The result reflects answer relevance, specificity, communication, and evidence. Stronger answers should include concrete examples, role-specific terms, and measurable outcomes.",
+        "scores": normalized_scores,
+        "strengths": data.get("strengths") or ["Completed the interview flow", "Attempted to address the questions directly", "Provided enough signal for a structured evaluation"],
+        "improvements": data.get("improvements") or [{
+            "area": "Answer depth",
+            "issue": "Several answers need more concrete evidence and role-specific detail.",
+            "how_to_fix": "Use a short situation-action-result structure and mention tools, decisions, and measurable outcomes.",
+            "resource": "Practice 5 STAR answers for the target role and review core role fundamentals.",
+        }],
+        "per_question": per_question,
+        "next_steps": data.get("next_steps") or ["Rewrite the weakest two answers with examples", "Add measurable outcomes to project explanations", "Practice speaking each answer in 60-90 seconds"],
+        "motivational_note": data.get("motivational_note") or "You have a clear baseline now. Tighten the examples and make every answer prove one job-relevant skill.",
+        "evaluation_source": data.get("evaluation_source") or "ai_normalized",
+    }
+
+def _config_value(key: str) -> str:
+    value = current_app.config.get(key) or ""
+    return str(value).strip()
+
+
+def _unique_keys(*keys: str) -> list[str]:
+    seen = set()
+    unique = []
+    for key in keys:
+        key = (key or "").strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(key)
+    return unique
+
+
+def _llm_providers(prefer_deepseek: bool = False) -> list[dict]:
+    groq_keys = _unique_keys(_config_value("GROQ_API_KEY"), _config_value("GROQ_INTERVIEW_API_KEY"))
+    gemini_keys = _unique_keys(_config_value("GEMINI_API_KEY"), _config_value("GEMINI_INTERVIEW_API_KEY"))
+    mistral_keys = _unique_keys(_config_value("MISTRAL_API_KEY"), _config_value("MISTRAL_INTERVIEW_API_KEY"))
+    deepseek_key = _config_value("DEEPSEEK_API_KEY")
+
+    providers = []
+    if prefer_deepseek and deepseek_key:
+        providers.append({"name": "DeepSeek", "type": "deepseek", "key": deepseek_key})
+
+    providers.extend({"name": f"Groq #{idx + 1}", "type": "groq", "key": key} for idx, key in enumerate(groq_keys))
+
+    if not prefer_deepseek and deepseek_key:
+        providers.append({"name": "DeepSeek", "type": "deepseek", "key": deepseek_key})
+
+    providers.extend({"name": f"Gemini #{idx + 1}", "type": "gemini", "key": key} for idx, key in enumerate(gemini_keys))
+    providers.extend({"name": f"Mistral #{idx + 1}", "type": "mistral", "key": key} for idx, key in enumerate(mistral_keys))
+    return providers
+
+
+def _call_provider(provider: dict, prompt: str, system: str, max_tokens: int, temperature: float) -> str:
+    provider_type = provider["type"]
+    api_key = provider["key"]
+
+    if provider_type == "groq":
+        client = groq_sdk.Groq(api_key=api_key, timeout=60.0)
+        resp = client.chat.completions.create(
+            model=current_app.config.get("GROQ_MODEL_FAST", "llama-3.3-70b-versatile"),
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content
+
+    if provider_type == "deepseek":
+        client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com", timeout=90.0)
+        resp = client.chat.completions.create(
+            model=current_app.config.get("DEEPSEEK_MODEL", "deepseek-chat"),
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content
+
+    if provider_type == "gemini":
+        genai.configure(api_key=api_key)
+        from google.generativeai.types import HarmBlockThreshold, HarmCategory
+
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        model = genai.GenerativeModel(
+            model_name=current_app.config.get("GEMINI_MODEL", "gemini-2.5-flash"),
+            system_instruction=system,
+            generation_config=genai.GenerationConfig(max_output_tokens=max_tokens, temperature=temperature),
+        )
+        resp = model.generate_content(prompt, safety_settings=safety_settings)
+        return resp.text
+
+    if provider_type == "mistral":
+        client = Mistral(api_key=api_key, timeout_ms=60000)
+        resp = client.chat.complete(
+            model=current_app.config.get("MISTRAL_MODEL", "mistral-small-latest"),
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content
+
+    raise ValueError(f"Unknown provider type: {provider_type}")
+
+
+def _call_llm(prompt: str, system: str, max_tokens: int = 2048, temperature: float = 0.7, prefer_deepseek: bool = False) -> str:
+    errors = []
+    for provider in _llm_providers(prefer_deepseek=prefer_deepseek):
+        try:
+            logger.info("[InterviewService] Trying %s", provider["name"])
+            return _call_provider(provider, prompt, system, max_tokens, temperature)
+        except Exception as exc:
+            logger.warning("[InterviewService] %s failed: %s", provider["name"], exc)
+            errors.append(f"{provider['name']}: {exc}")
+    raise RuntimeError("All interview LLM providers failed")
+
+
+def _call_llm_json(prompt: str, system: str, max_tokens: int = 2048, temperature: float = 0.7, prefer_deepseek: bool = False):
+    raw = _call_llm(prompt, system, max_tokens=max_tokens, temperature=temperature, prefer_deepseek=prefer_deepseek)
+    return _parse_json(raw)
+
+
 def _deepseek_client():
     return openai.OpenAI(
         api_key=current_app.config["DEEPSEEK_API_KEY"],
@@ -415,13 +808,20 @@ def _deepseek_client():
     )
 
 
-def _parse_json(response) -> dict:
-    raw = response.choices[0].message.content.strip()
+def _parse_json(response):
+    if isinstance(response, str):
+        raw = response.strip()
+    else:
+        raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+    raw = raw.strip()
+    match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", raw)
+    if match:
+        raw = match.group(1)
+    return json.loads(raw)
 
 
 def _ensure_self_intro_question(questions: list) -> list:
@@ -434,6 +834,77 @@ def _ensure_self_intro_question(questions: list) -> list:
         cleaned[0] = intro
         return cleaned
     return [intro] + cleaned
+
+
+def _ensure_plan_intro_question(questions: list) -> list:
+    intro = {
+        "id": 1,
+        "text": "Tell me about yourself.",
+        "type": "hr",
+        "category": "introduction",
+        "follow_up_hint": "Ask for a concise summary of background, strengths, and role fit.",
+    }
+    if not questions:
+        return [intro]
+    first = questions[0].get("text", "").lower()
+    if "tell me about yourself" in first or "introduce yourself" in first:
+        questions[0] = {**questions[0], "id": 1, "text": "Tell me about yourself."}
+    else:
+        questions = [intro] + questions
+    for idx, question in enumerate(questions):
+        question["id"] = idx + 1
+    return questions
+
+
+def _ensure_named_greeting(greeting: str, user_name: str, job_role: str) -> str:
+    greeting = (greeting or "").strip()
+    name = (user_name or "").strip()
+    if not name or name.lower() == "there":
+        return greeting or f"Hi there, I am Anya. I will be taking your mock interview for the {job_role} role today. Take a breath and answer naturally."
+
+    if name.lower() in greeting.lower():
+        return greeting
+
+    if greeting:
+        return f"Hi {name}, {greeting[0].lower()}{greeting[1:]}"
+    return f"Hi {name}, I am Anya. I will be taking your mock interview for the {job_role} role today. Take a breath and answer naturally."
+
+
+def _ensure_minimum_plan_questions(questions: list, job_role: str, min_count: int = 12) -> list:
+    """Prevent short LLM responses from ending the interview after only 1-2 questions."""
+    fallback = [
+        ("technical", "core skills", f"What are the most important skills you use for a {job_role} role, and how have you applied them?"),
+        ("technical", "problem solving", f"Walk me through a challenging {job_role} problem you solved recently."),
+        ("technical", "debugging", "How do you approach debugging when something works locally but fails in production?"),
+        ("technical", "architecture", f"How would you design a reliable solution for a common {job_role} workflow?"),
+        ("technical", "tools", f"Which tools or frameworks are strongest for your {job_role} work, and why?"),
+        ("situational", "prioritization", "If you had two urgent tasks and limited time, how would you decide what to do first?"),
+        ("situational", "ambiguity", "Tell me how you handle unclear requirements from a manager or client."),
+        ("hr", "teamwork", "Tell me about a time you worked with a difficult teammate and how you handled it."),
+        ("hr", "ownership", "Give me an example of a time you took ownership without being asked."),
+        ("cultural", "motivation", f"Why are you interested in this {job_role} path right now?"),
+        ("hr", "availability", "What is your current availability or notice period?"),
+        ("closing", "candidate questions", "Before we wrap up, do you have any questions for me about the role or team?"),
+    ]
+
+    existing_text = {str(q.get("text", "")).strip().lower() for q in questions}
+    for q_type, category, text in fallback:
+        if len(questions) >= min_count:
+            break
+        if text.lower() in existing_text:
+            continue
+        questions.append({
+            "id": len(questions) + 1,
+            "text": text,
+            "type": q_type,
+            "category": category,
+            "follow_up_hint": "Ask for a concrete example, tradeoff, or measurable outcome if the answer is vague.",
+        })
+        existing_text.add(text.lower())
+
+    for idx, question in enumerate(questions):
+        question["id"] = idx + 1
+    return questions
 
 
 def _clamp_score(value, default=0) -> int:
@@ -525,10 +996,10 @@ def _normalize_voice_evaluation(
         + result["pace_score"] * 0.10
         + result["completeness_score"] * 0.10
     )
-    result["overall_score"] = _clamp_score(result.get("overall_score"), round(weighted))
+    result["overall_score"] = _clamp_score(round(weighted))
 
     overall = result["overall_score"]
-    result["grade"] = result.get("grade") or (
+    result["grade"] = (
         "A+" if overall >= 95 else
         "A" if overall >= 90 else
         "B+" if overall >= 80 else
@@ -536,7 +1007,7 @@ def _normalize_voice_evaluation(
         "C" if overall >= 60 else
         "D"
     )
-    result["verdict"] = result.get("verdict") or (
+    result["verdict"] = (
         "Strong" if overall >= 80 else "Acceptable" if overall >= 60 else "Needs Work"
     )
     result["keywords_found"] = result.get("keywords_found") or []
