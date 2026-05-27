@@ -191,8 +191,21 @@ def _register_error_handlers(app: Flask):
 
     @app.errorhandler(404)
     def not_found(e):
-        return jsonify({"error": "Not Found", "message": "The requested resource does not exist"}), 404
-
+        response = jsonify({"error": "Not Found", "message": "The requested resource does not exist"})
+        origin = request.headers.get("Origin")
+        allowed = [
+            "https://nyrvexa.in",
+            "https://www.nyrvexa.in",
+            "https://nyrvexa-frontend.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+        ]
+        if origin in allowed:
+          response.headers.add("Access-Control-Allow-Origin", origin)
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        return response, 404
+    
     @app.errorhandler(429)
     def rate_limit_exceeded(e):
         return jsonify({"error": "Too Many Requests", "message": "Rate limit exceeded. Please slow down."}), 429
