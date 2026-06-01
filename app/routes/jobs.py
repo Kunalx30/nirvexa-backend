@@ -260,16 +260,39 @@ def get_premium_jobs():
 
 @jobs_bp.route("/filters/options", methods=["GET"])
 def get_filter_options():
-    sources = db.session.query(Job.source).filter(Job.is_active == True, Job.source != None).distinct().all()
-    source_list = sorted(list({s[0].strip() for s in sources if s[0] and s[0].strip()}))
+    from sqlalchemy import func
+    
+    # Get distinct sources with counts
+    sources_data = (
+        db.session.query(Job.source, func.count(Job.id))
+        .filter(Job.is_active == True, Job.source != None)
+        .group_by(Job.source)
+        .all()
+    )
+    source_counts = {s[0].strip(): s[1] for s in sources_data if s[0] and s[0].strip()}
+    source_list = sorted(list(source_counts.keys()))
 
-    types = db.session.query(Job.job_type).filter(Job.is_active == True, Job.job_type != None).distinct().all()
-    type_list = sorted(list({t[0].strip() for t in types if t[0] and t[0].strip()}))
+    # Get distinct types with counts
+    types_data = (
+        db.session.query(Job.job_type, func.count(Job.id))
+        .filter(Job.is_active == True, Job.job_type != None)
+        .group_by(Job.job_type)
+        .all()
+    )
+    type_counts = {t[0].strip(): t[1] for t in types_data if t[0] and t[0].strip()}
+    type_list = sorted(list(type_counts.keys()))
+
+    # Total active jobs count
+    total_active_jobs = db.session.query(func.count(Job.id)).filter(Job.is_active == True).scalar() or 0
 
     return jsonify({
         "sources": source_list,
         "types":   type_list,
+        "source_counts": source_counts,
+        "type_counts": type_counts,
+        "total_jobs": total_active_jobs,
     }), 200
+
 
 
 @jobs_bp.route("/<job_id>", methods=["GET"])
