@@ -1230,7 +1230,12 @@ def build_resume(
       5. Upload to R2 (skipped in local dev)
       6. Return dict
     """
-    template = ResumeTemplate.query.filter_by(id=template_id, is_active=True).first()
+    template = ResumeTemplate.query.filter_by(slug=template_id, is_active=True).first()
+    if not template:
+        try:
+            template = ResumeTemplate.query.filter_by(id=template_id, is_active=True).first()
+        except Exception:
+            template = None
     if not template:
         raise ValueError(f"Template '{template_id}' not found or inactive.")
 

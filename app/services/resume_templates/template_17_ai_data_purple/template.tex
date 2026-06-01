@@ -1,0 +1,142 @@
+\documentclass[10pt, a4paper]{article}
+
+\usepackage[
+    ignoreheadfoot,
+    top=1.0cm,
+    bottom=1.0cm,
+    left=1.8cm,
+    right=1.8cm,
+    footskip=0.3cm,
+]{geometry}
+\usepackage{titlesec}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[
+    pdftitle={{{FULL_NAME}} Resume},
+    pdfauthor={{{FULL_NAME}}},
+    pdfcreator={LaTeX},
+    colorlinks=true,
+    urlcolor=accentColor
+]{hyperref}
+\usepackage{calc}
+\usepackage{bookmark}
+\usepackage{lastpage}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{ifthen}
+\usepackage{needspace}
+\usepackage{iftex}
+\usepackage{fontawesome5}
+
+\definecolor{primaryColor}{RGB}{0, 0, 0}
+\definecolor{accentColor}{RGB}{90, 30, 150}
+\definecolor{ruleColor}{RGB}{90, 30, 150}
+
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+\fi
+
+\usepackage{charter}
+
+\raggedright
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+
+\titleformat{\section}
+    {\needspace{4\baselineskip}\bfseries\large\color{accentColor}}
+    {}{0pt}{}
+    [\vspace{1pt}{\color{ruleColor}\titlerule[1.2pt]}]
+\titlespacing{\section}{-1pt}{0.15cm}{0.10cm}
+
+\renewcommand\labelitemi{{\color{accentColor}$\vcenter{\hbox{\small$\bullet$}}$}}
+
+\newenvironment{highlights}{
+    \begin{itemize}[topsep=0.06cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=0cm+10pt]
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[topsep=0.06cm, parsep=0.05cm, partopsep=0pt, itemsep=0pt, leftmargin=10pt]
+}{\end{itemize}}
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{0cm+0.00001cm}{0cm+0.00001cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 4.5cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft \secondColumn
+    \end{paracol}
+    \endonecolentry
+}
+
+\newenvironment{header}{
+    \setlength{\topsep}{0pt}\par\kern\topsep\centering\linespread{1.4}
+}{\par\kern\topsep}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+    \newcommand{\AND}{\unskip\cleaders\copy\ANDbox\hskip\wd\ANDbox\ignorespaces}
+    \newsavebox\ANDbox
+    \sbox\ANDbox{\textcolor{accentColor}{$|$}}
+
+    \begin{header}
+        \fontsize{26pt}{26pt}\selectfont \textbf{{{FULL_NAME}}}
+
+        \vspace{5pt}
+        \small
+        \mbox{{\footnotesize\faMapMarker}~{{LOCATION}}}%
+        \kern 4pt\AND\kern 4pt%
+        \mbox{{\footnotesize\faPhone}~\hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}}}%
+        \kern 4pt\AND\kern 4pt%
+        \mbox{{\footnotesize\faEnvelope}~\hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}}}%
+        \kern 4pt\AND\kern 4pt%
+        \mbox{{\footnotesize\faLinkedin}~\hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn}}%
+        \kern 4pt\AND\kern 4pt%
+        \mbox{{\footnotesize\faGithub}~\hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}}{{PORTFOLIO_HEADER_MONO}}%
+    \end{header}
+
+    \vspace{3pt}
+
+    \section{Summary}
+    \begin{onecolentry}
+        {{SUMMARY}}
+    \end{onecolentry}
+
+    \section{Technical Skills}
+    \begin{onecolentry}
+        {{SKILLS_BLOCK}}
+    \end{onecolentry}
+
+    \section{Education}
+    {{EDUCATION_BLOCK}}
+
+    \section{{{EXPERIENCE_SECTION_TITLE}}}
+    {{EXPERIENCE_BLOCK}}
+
+    \section{Projects}
+    {{PROJECTS_BLOCK}}
+
+    \section{Certifications}
+    \begin{onecolentry}
+        \begin{highlightsforbulletentries}
+{{CERTIFICATIONS_BLOCK}}
+        \end{highlightsforbulletentries}
+    \end{onecolentry}
+
+\end{document}

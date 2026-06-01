@@ -1,0 +1,118 @@
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[margin=0.65in, top=0.55in, bottom=0.55in]{geometry}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{fontawesome5}
+\usepackage{changepage}
+\usepackage{paracol}
+\usepackage{needspace}
+
+\definecolor{sectionred}{RGB}{210, 75, 0}
+\definecolor{namecolor}{RGB}{210, 75, 0}
+\definecolor{linkblue}{RGB}{17, 85, 204}
+
+\hypersetup{
+  pdftitle={{{FULL_NAME}} Resume},
+  pdfauthor={{{FULL_NAME}}},
+  colorlinks=true,
+  urlcolor=linkblue,
+  linkcolor=linkblue
+}
+
+\titleformat{\section}
+  {\color{sectionred}\bfseries\normalsize}
+  {}{0em}{\MakeUppercase}
+  [\color{sectionred}\titlerule]
+\titlespacing{\section}{0pt}{8pt}{4pt}
+
+\setlist[itemize]{
+  leftmargin=1.2em,
+  itemsep=1pt,
+  parsep=0pt,
+  topsep=2pt,
+  label=--
+}
+
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\setlength{\parindent}{0pt}
+\setlength{\columnsep}{0.15cm}
+\pagenumbering{gobble}
+
+\newenvironment{onecolentry}{
+  \begin{adjustwidth}{0cm}{0cm}
+}{\end{adjustwidth}}
+
+\newenvironment{twocolentry}[2][]{
+  \onecolentry
+  \def\secondColumn{#2}
+  \setcolumnwidth{\fill, 4.2cm}
+  \begin{paracol}{2}
+}{
+  \switchcolumn \raggedleft \secondColumn
+  \end{paracol}
+  \endonecolentry
+}
+
+\newenvironment{highlights}{
+  \begin{itemize}
+}{\end{itemize}}
+
+\newenvironment{highlightsforbulletentries}{
+  \begin{itemize}
+}{\end{itemize}}
+
+\let\hrefWithoutArrow\href
+
+\begin{document}
+
+{\LARGE\bfseries\color{namecolor} {{FULL_NAME}}}
+
+\vspace{3pt}
+
+\small
+\faPhone\ \hrefWithoutArrow{tel:{{PHONE_RAW}}}{{{PHONE}}} \quad
+\faEnvelope\ \hrefWithoutArrow{mailto:{{EMAIL}}}{{{EMAIL}}} \quad
+\faMapMarker*\ {{LOCATION}} \quad
+\faLinkedin\ \hrefWithoutArrow{{{LINKEDIN_URL}}}{LinkedIn} \quad
+\faGithub\ \hrefWithoutArrow{{{GITHUB_URL}}}{GitHub}{{PORTFOLIO_CENTER}}
+
+\vspace{2pt}
+\noindent\rule{\linewidth}{0.4pt}
+
+\section{Summary}
+\begin{onecolentry}
+{{SUMMARY}}
+\end{onecolentry}
+
+\section{Technical Skills}
+\begin{onecolentry}
+{{SKILLS_BLOCK}}
+\end{onecolentry}
+
+\section{{{EXPERIENCE_SECTION_TITLE}}}
+{{EXPERIENCE_BLOCK}}
+
+\section{Projects}
+{{PROJECTS_BLOCK}}
+
+\section{Education}
+{{EDUCATION_BLOCK}}
+
+\section{Certifications}
+\begin{onecolentry}
+  \begin{highlightsforbulletentries}
+{{CERTIFICATIONS_BLOCK}}
+  \end{highlightsforbulletentries}
+\end{onecolentry}
+
+\end{document}

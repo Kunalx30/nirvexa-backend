@@ -45,6 +45,93 @@ from app.services.latex_compiler import compile_latex
 resume_bp = Blueprint("resume", __name__, url_prefix="/api/resume")
 logger    = logging.getLogger(__name__)
 
+TEMPLATES_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "services", "resume_templates")
+)
+
+
+def _load_templates_from_disk() -> int:
+    """
+    Upsert bundled resume templates into the DB.
+
+    Production can boot with an empty Render database after migrations/redeploys.
+    Keeping this lightweight self-heal here prevents the builder from showing an
+    empty template picker or failing when a bundled template slug is selected.
+    """
+    loaded = 0
+    if not os.path.isdir(TEMPLATES_DIR):
+        logger.error("[Templates] Directory missing: %s", TEMPLATES_DIR)
+        return loaded
+
+    for folder_name in sorted(os.listdir(TEMPLATES_DIR)):
+        folder_path = os.path.join(TEMPLATES_DIR, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        meta_path = os.path.join(folder_path, "metadata.json")
+        if not os.path.exists(meta_path):
+            meta_path = os.path.join(folder_path, "Metadata.json")
+        tex_path = os.path.join(folder_path, "template.tex")
+
+        if not os.path.exists(meta_path) or not os.path.exists(tex_path):
+            logger.warning("[Templates] Skipping %s; metadata/template missing", folder_name)
+            continue
+
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            with open(tex_path, "r", encoding="utf-8") as f:
+                tex = f.read()
+
+            slug = meta.get("id") or meta.get("slug") or folder_name
+            template = ResumeTemplate.query.filter_by(slug=slug).first()
+            if not template:
+                template = ResumeTemplate(slug=slug)
+                db.session.add(template)
+
+            template.name = meta.get("name", slug)
+            template.category = meta.get("category", "professional")
+            template.best_for = meta.get("best_for", "")
+            template.description = meta.get("description", "")
+            template.preview_url = meta.get("preview_url", template.preview_url or "")
+            template.latex_code = tex
+            template.is_active = True
+            loaded += 1
+        except Exception as e:
+            logger.error("[Templates] Failed loading %s: %s", folder_name, e)
+
+    if loaded:
+        db.session.commit()
+        logger.info("[Templates] Loaded/updated %s templates from disk", loaded)
+    return loaded
+
+
+def _ensure_templates_available() -> None:
+    disk_count = 0
+    if os.path.isdir(TEMPLATES_DIR):
+        disk_count = sum(
+            1
+            for name in os.listdir(TEMPLATES_DIR)
+            if os.path.isdir(os.path.join(TEMPLATES_DIR, name))
+        )
+    active_count = ResumeTemplate.query.filter_by(is_active=True).count()
+    if active_count < disk_count:
+        _load_templates_from_disk()
+
+
+def _find_template(identifier: str):
+    if not identifier:
+        return None
+
+    template = ResumeTemplate.query.filter_by(slug=identifier, is_active=True).first()
+    if template:
+        return template
+
+    try:
+        return ResumeTemplate.query.filter_by(id=identifier, is_active=True).first()
+    except Exception:
+        return None
+
 # ── Groq config ───────────────────────────────────────────────────────────────
 GROQ_KEY   = os.environ.get("GROQ_RESUME_API_KEY") or os.environ.get("GROQ_API_KEY", "")
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
@@ -487,6 +574,7 @@ def resume_history():
 
 @resume_bp.route("/templates", methods=["GET"])
 def list_templates():
+    _ensure_templates_available()
     templates = ResumeTemplate.query.filter_by(is_active=True).all()
     return _ok({"templates": [t.to_dict() for t in templates]})
 
@@ -497,8 +585,9 @@ def list_templates():
 
 @resume_bp.route("/templates/<template_id>", methods=["GET"])
 def get_template(template_id):
-    template = ResumeTemplate.query.get(template_id)
-    if not template or not template.is_active:
+    _ensure_templates_available()
+    template = _find_template(template_id)
+    if not template:
         return _err("Template not found", 404)
     return _ok({"template": template.to_dict(include_latex=False)})
 
@@ -517,8 +606,9 @@ def _handle_build():
     if not form_data.get("full_name") or not form_data.get("email"):
         return _err("full_name and email are required")
 
-    template = ResumeTemplate.query.get(form_data["template_id"])
-    if not template or not template.is_active:
+    _ensure_templates_available()
+    template = _find_template(form_data["template_id"])
+    if not template:
         return _err("Template not found or inactive", 404)
 
     resume_id = str(uuid.uuid4())
@@ -701,8 +791,9 @@ def regenerate_resume(resume_id):
     if not form_data:
         return _err("Request body must be JSON")
 
-    template = ResumeTemplate.query.get(str(resume.template_id))
-    if not template or not template.is_active:
+    _ensure_templates_available()
+    template = _find_template(str(resume.template_id))
+    if not template:
         return _err("Template not found", 404)
 
     try:
