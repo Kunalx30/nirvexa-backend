@@ -48,6 +48,7 @@ logger    = logging.getLogger(__name__)
 TEMPLATES_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "services", "resume_templates")
 )
+_TEMPLATES_SYNCED = False
 
 
 def _load_templates_from_disk() -> int:
@@ -107,16 +108,33 @@ def _load_templates_from_disk() -> int:
 
 
 def _ensure_templates_available() -> None:
-    disk_count = 0
-    if os.path.isdir(TEMPLATES_DIR):
-        disk_count = sum(
-            1
-            for name in os.listdir(TEMPLATES_DIR)
-            if os.path.isdir(os.path.join(TEMPLATES_DIR, name))
-        )
+    global _TEMPLATES_SYNCED
+    if _TEMPLATES_SYNCED:
+        return
+    if not os.path.isdir(TEMPLATES_DIR):
+        return
+    disk_slugs = {
+        name
+        for name in os.listdir(TEMPLATES_DIR)
+        if os.path.isdir(os.path.join(TEMPLATES_DIR, name))
+    }
+    if not disk_slugs:
+        return
     active_count = ResumeTemplate.query.filter_by(is_active=True).count()
-    if active_count < disk_count:
+    if active_count < len(disk_slugs):
         _load_templates_from_disk()
+        _TEMPLATES_SYNCED = True
+        return
+    existing_slugs = {
+        row.slug
+        for row in ResumeTemplate.query.with_entities(ResumeTemplate.slug).filter_by(is_active=True).all()
+        if row.slug
+    }
+    if disk_slugs - existing_slugs:
+        logger.info("[Templates] New slugs on disk not in DB: %s — reloading", disk_slugs - existing_slugs)
+        _load_templates_from_disk()
+    _TEMPLATES_SYNCED = True
+
 
 
 def _find_template(identifier: str):
@@ -227,23 +245,79 @@ Return this exact JSON structure with your computed values:
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _groq(system: str, user: str) -> str:
+def _call_ai_general(system: str, user: str, temperature: float = 0.1, max_tokens: int = 1024) -> str:
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ]
+
+    # Fallback 1: Groq with GROQ_RESUME_API_KEY
+    resume_key = os.environ.get("GROQ_RESUME_API_KEY")
+    if resume_key:
+        try:
+            logger.info("[AI] Trying Groq (resume key) for analysis/enhance")
+            return _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", resume_key, "llama-3.3-70b-versatile", messages, temperature, max_tokens)
+        except Exception as e:
+            logger.warning("[AI] Groq resume key failed: %s", e)
+
+    # Fallback 2: Groq with GROQ_API_KEY
+    main_key = os.environ.get("GROQ_API_KEY")
+    if main_key and main_key != resume_key:
+        try:
+            logger.info("[AI] Trying Groq (main key) for analysis/enhance")
+            return _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", main_key, "llama-3.3-70b-versatile", messages, temperature, max_tokens)
+        except Exception as e:
+            logger.warning("[AI] Groq main key failed: %s", e)
+
+    # Fallback 3: DeepSeek
+    ds_key = os.environ.get("DEEPSEEK_API_KEY")
+    if ds_key:
+        try:
+            logger.info("[AI] Trying DeepSeek for analysis/enhance")
+            return _call_openai_compat("https://api.deepseek.com/chat/completions", ds_key, "deepseek-chat", messages, temperature, max_tokens)
+        except Exception as e:
+            logger.warning("[AI] DeepSeek failed: %s", e)
+
+    # Fallback 4: Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            logger.info("[AI] Trying Gemini for analysis/enhance")
+            return _call_gemini(gemini_key, system, user, temperature, max_tokens)
+        except Exception as e:
+            logger.warning("[AI] Gemini failed: %s", e)
+
+    raise RuntimeError("All AI providers failed for resume analysis/enhance.")
+
+def _call_openai_compat(url: str, api_key: str, model: str, messages: list, temperature: float, max_tokens: int) -> str:
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
     resp = requests.post(
-        GROQ_URL,
-        json={
-            "model": GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            "temperature": 0.1,
-            "max_tokens":  1024,
-        },
-        headers={"Authorization": f"Bearer {GROQ_KEY}"},
+        url,
+        json=payload,
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=60,
     )
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
+
+def _call_gemini(api_key: str, system: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system,
+        generation_config=genai.GenerationConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        ),
+    )
+    response = model.generate_content(user_prompt, request_options={"timeout": 60})
+    return response.text
 
 
 def _parse_json(raw: str) -> dict:
@@ -481,13 +555,13 @@ def analyze_resume():
 
     try:
         if jd_text:
-            raw = _groq(
+            raw = _call_ai_general(
                 _JD_SYSTEM_PROMPT,
                 _JD_USER_TEMPLATE.format(resume_text=resume_text, jd_text=jd_text),
             )
         else:
-            raw = _groq(_GENERIC_PROMPT, f"Resume text:\n\n{resume_text}")
-        logger.info(f"[Analyze] Raw Groq response: {raw}")    
+            raw = _call_ai_general(_GENERIC_PROMPT, f"Resume text:\n\n{resume_text}")
+        logger.info(f"[Analyze] Raw AI response: {raw}")    
     except Exception as e:
         logger.error(f"[Analyze] Groq failed: {e}")
         return _err("AI analysis failed. Please try again.", 500)
@@ -792,14 +866,17 @@ def regenerate_resume(resume_id):
         return _err("Request body must be JSON")
 
     _ensure_templates_available()
-    template = _find_template(str(resume.template_id))
+    requested_template_id = form_data.get("template_id") or str(resume.template_id)
+    template = _find_template(requested_template_id)
+    if not template:
+        template = _find_template(str(resume.template_id))
     if not template:
         return _err("Template not found", 404)
 
     try:
         result = build_resume(
             form_data   = form_data,
-            template_id = str(resume.template_id),
+            template_id = str(template.id),
             user_id     = str(g.user_id),
             resume_id   = resume_id,
         )
@@ -812,6 +889,7 @@ def regenerate_resume(resume_id):
         resume.ai_content  = result["ai_content"]
         resume.latex_draft = result["latex_code"]
         resume.pdf_url     = result["pdf_url"]
+        resume.template_id = template.id
         resume.status      = "compiled"
         db.session.commit()
     except Exception as e:

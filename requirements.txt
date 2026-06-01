@@ -31,8 +31,7 @@ pycparser==3.0
 
 # --- AI / LLM ---
 groq==0.11.0
-google-generativeai
-google-ai-generativelanguage==0.6.10
+google-generativeai==0.8.5
 google-api-core==2.30.3
 google-api-python-client==2.194.0
 google-auth==2.49.2
@@ -42,7 +41,12 @@ mistralai==1.0.3
 openai==1.51.0
 
 # --- LangChain ---
-langchain==0.3.7
+# langchain==0.3.7
+# langchain-core==0.3.63
+# langchain-google-genai==2.0.4
+# langchain-groq==0.2.1
+# langchain-text-splitters==0.3.8
+# langsmith==0.1.147
 langchain-core==0.3.63
 langchain-google-genai==2.0.4
 langchain-groq==0.2.1
@@ -60,7 +64,7 @@ faiss-cpu==1.13.2
 # hf-xet==1.4.3
 
 # --- ML / Numeric ---
-numpy==1.26.4
+# numpy==1.26.4
 scikit-learn==1.8.0
 scipy==1.17.1
 joblib==1.5.3
@@ -131,9 +135,9 @@ ordered-set==4.1.0
 
 # --- gRPC (Google dependencies) ---
 grpcio==1.80.0
-grpcio-status==1.71.2
+grpcio-status>=1.75.1,<2.0.0
 proto-plus==1.27.2
-protobuf==5.29.6
+protobuf>=6.31.1,<7.0.0
 
 # --- LangChain internals ---
 jsonpatch==1.33

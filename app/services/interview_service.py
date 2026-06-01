@@ -36,7 +36,12 @@ The candidate wants a real interview experience, not a simulation."""
 # ── Phase 6.6 — Text Interview Prep ──────────────────────────────────────────
 
 def generate_questions(role: str, prep_type: str) -> dict:
+    role = (role or "").strip()
+    if not role:
+        return {"success": False, "error": "Job role is required."}
+
     if prep_type == 'hr':
+
         type_instruction = (
             "Generate 10 HR/behavioral interview questions for this role. "
             "Focus on: teamwork, conflict resolution, strengths/weaknesses, "
@@ -148,6 +153,10 @@ Rules:
 
 def generate_voice_questions(role: str, mode: str, difficulty: str) -> dict:
     """Generate questions for voice interview. Returns a flat list of question strings."""
+    role = (role or "").strip()
+    if not role:
+        return {"success": False, "error": "Job role is required."}
+
 
     interviewer_style = (
         "Use the voice of a friendly Indian female HR interviewer named Ananya. "
@@ -290,6 +299,10 @@ Scoring rules:
 
 
 def generate_interview_plan(job_role: str, experience_level: str, user_name: str) -> dict:
+    job_role = (job_role or "").strip()
+    if not job_role:
+        return {"success": False, "error": "Job role is required."}
+
     prompt = f"""You are interviewing {user_name or 'the candidate'} for a {job_role} role ({experience_level} level).
 
 Generate a natural interview opening greeting AND a full question plan.
@@ -388,7 +401,7 @@ Candidate's answer: "{user_answer}"
 This is question {question_index + 1} of {total_questions}.
 
 As Anya, generate:
-1. A brief natural reaction to this specific answer (1-2 sentences ONLY — acknowledge what they said, good or needs improvement, BE SPECIFIC to their answer, never generic)
+1. A brief natural reaction to this specific answer (1-2 sentences ONLY — acknowledge what they said, good or needs improvement, BE SPECIFIC to their answer, never generic). The reaction MUST NEVER ask the candidate any clarifying questions, follow-up questions, or request elaboration (e.g., do NOT say "Can you explain...?", "Could you tell me more...?", or "How did you...?"), as the flow will immediately transition to the next question.
 2. A smooth natural transition to the next question (1 sentence connector like "Moving on..." or "That's a good point, now let me ask you...")
 
 Vary your reactions — don't always say "Great answer!" Use: "Interesting...", "That makes sense...", "I see, so you...", "Right, and...", "That's a solid approach...", "Good, I like that you mentioned...", etc.
@@ -785,7 +798,11 @@ def _call_provider(provider: dict, prompt: str, system: str, max_tokens: int, te
 
 def _call_llm(prompt: str, system: str, max_tokens: int = 2048, temperature: float = 0.7, prefer_deepseek: bool = False) -> str:
     errors = []
-    for provider in _llm_providers(prefer_deepseek=prefer_deepseek):
+    providers = _llm_providers(prefer_deepseek=prefer_deepseek)
+    if not providers:
+        raise RuntimeError("No LLM providers configured. Please configure at least one of: GROQ_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, or MISTRAL_API_KEY.")
+    for provider in providers:
+
         try:
             logger.info("[InterviewService] Trying %s", provider["name"])
             return _call_provider(provider, prompt, system, max_tokens, temperature)

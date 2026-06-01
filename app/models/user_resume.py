@@ -15,7 +15,7 @@ class UserResume(db.Model):
     __tablename__ = "user_resumes"
 
     id              = db.Column(db.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id         = db.Column(db.String, db.ForeignKey("users.id"), nullable=False)
+    user_id         = db.Column(db.String, db.ForeignKey("users.id"), nullable=False, index=True)
     template_id = db.Column(db.UUID(as_uuid=True), db.ForeignKey("resume_templates.id", ondelete="SET NULL"), nullable=True)
     # All form fields the user submitted — stored as JSONB
     resume_data     = db.Column(db.JSON, nullable=False)

@@ -10,7 +10,7 @@ class ResumeAnalysis(db.Model):
     __tablename__ = "resume_analyses"
 
     id         = db.Column(db.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=False)
+    user_id    = db.Column(db.String, db.ForeignKey("users.id"), nullable=False, index=True)
     filename   = db.Column(db.String(255))
     score      = db.Column(db.Integer)
     ats_status = db.Column(db.String(50))
