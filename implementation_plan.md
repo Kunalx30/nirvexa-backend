@@ -1,72 +1,43 @@
-# Plan: Professional Job Page Redesign, Logo Integration, and Deployment Prep
+# Goal Description
 
-This plan outlines the design enhancements to the job page, replacing the text/square logo placeholder with the newly added logo asset, pointing the production environment to the backend API URL, and pushing the final code to GitHub.
+The goal is to make the entire frontend application responsive for mobile devices, and introduce a "Dark Mode" using a CSS inversion trick as requested ("invert the white clrs into black"). We will also add a dark mode toggle button in the user's Profile page.
 
 ## User Review Required
 
-> [!IMPORTANT]
-> **API URL Verification**: We will point the production environment (`.env.production`) to the custom backend URL `https://api.nyrvexa.in/api`. Please ensure your Render backend custom domain is active.
-> **Logo Asset**: The new logo file `file_000000008d9471fabb37e610b2a9bb34.png` in `public` has been copied to a standard, clean filename `logo.png`. We will use this image across the application.
+> [!WARNING]
+> **CSS Inversion technique for Dark Mode**
+> The `filter: invert(1) hue-rotate(180deg)` approach is a quick way to achieve a dark mode. It will turn `#fafafa` (light grey) into `#050505` (almost black), but it can sometimes cause minor artifacts on shadows, borders, or colorful gradients. We will also invert images back so they look normal. Please confirm if you are okay with this quick CSS trick or if you'd prefer a full Tailwind dark mode (which would take significantly longer).
+
+## Open Questions
+
+None currently, but please review the approach above!
 
 ## Proposed Changes
 
----
+### Global Styles & State
 
-### 1. Logo Asset Replacement (Frontend)
+#### [MODIFY] [index.css](file:///c:/Users/kunal/nirvexa-frontend/src/index.css)
+- Add `.dark-theme` CSS rules that apply `filter: invert(1) hue-rotate(180deg)` to the HTML body.
+- Add counter-inversion for `img`, `video`, and specific UI elements (like colored gradients or avatars) so their original colors are preserved.
 
-We will replace the text-based square logo `<div className="*lsq">N</div>` with the new logo image.
+#### [MODIFY] [App.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/App.jsx) (or new Context)
+- We will add a global state (persisted to `localStorage`) to track whether Dark Mode is enabled.
+- The state will toggle the `.dark-theme` class on the `<html>` or `<body>` element.
 
-#### [MODIFY] [Navbar.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/components/layout/Navbar.jsx)
-- Replace `<div className="nb-lsq">N</div>` with an image tag pointing to `/logo.png`.
+### Pages & Responsiveness
 
-#### [MODIFY] [Landing.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Landing.jsx)
-- Replace logo icons in header and footer with image tags pointing to `/logo.png`.
+#### [MODIFY] [Profile.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Profile.jsx)
+- Add a "Dark Mode" toggle button/switch in the Profile settings.
+- Improve grid layouts to ensure they collapse into single columns on small screens (`flex-col` instead of `flex-row` on mobile).
 
-#### [MODIFY] [Login.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Login.jsx)
-- Replace the logo placeholder in the auth card with `/logo.png`.
-
-#### [MODIFY] [Register.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Register.jsx)
-- Replace the logo placeholder in the register card with `/logo.png`.
-
-#### [MODIFY] [NotFound.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/NotFound.jsx)
-- Replace the logo placeholder in the 404 card with `/logo.png`.
-
-#### [MODIFY] [Pricing.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Pricing.jsx)
-- Replace the logo placeholder in the pricing page header with `/logo.png`.
-
-#### [MODIFY] [UserAdmin.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/UserAdmin.jsx)
-- Replace the logo placeholder in the admin auth card and sidebar header with `/logo.png`.
-
----
-
-### 2. Job Page Polish & Redesign (Frontend)
-
-We will polish [Jobs.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Jobs.jsx) to make it look highly professional, matching premium pages like the Career Path page.
-
-#### [MODIFY] [Jobs.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/pages/Jobs.jsx)
-- Add a subtle dotted/grid background to the page container.
-- Implement soft animations (fade-in/fade-slide) when the job cards load.
-- Enhance card aesthetics using clean borders, premium shadows, and micro-hover zoom effects.
-- Style the search container and filters to utilize polished glassmorphism/inset highlights.
-- Align typography and layout sizes perfectly.
-
----
-
-### 3. Production Environment Target Configuration (Frontend)
-
-#### [MODIFY] [.env.production](file:///c:/Users/kunal/nirvexa-frontend/.env.production)
-- Uncomment `VITE_API_URL=https://api.nyrvexa.in/api`.
-- Comment out/remove the local development fallback `http://127.0.0.1:5000/api`.
-
----
-
-### 4. Push Code to GitHub
-
-We will commit all modified and created files across the backend and frontend repositories and push them to their respective GitHub remotes.
+#### [MODIFY] [Layout.jsx](file:///c:/Users/kunal/nirvexa-frontend/src/components/layout/Layout.jsx) & Other Pages
+- Review and apply mobile-first Tailwind utilities (`sm:`, `md:`, `lg:`) to containers.
+- Fix hardcoded widths like `w-[500px]` that overflow on mobile screens.
+- Ensure padding and font sizes are appropriately scaled down on small devices.
 
 ## Verification Plan
 
-### Manual Verification
-- Run `npm run build` locally in `nirvexa-frontend` to verify that there are no syntax/build errors after modifying files.
-- Inspect the file modifications locally using a git diff command.
-- Push the commits and verify they are successfully pushed to GitHub.
+### Automated/Manual Tests
+- I will run the frontend dev server (`npm run dev`) in the background if possible, or request that you preview it.
+- Toggle the dark mode button in the Profile page to verify the CSS inversion works and doesn't break images.
+- Shrink the browser window / use mobile view to verify the layout of key pages (Profile, Landing, SkillMatch) doesn't overflow horizontally.
