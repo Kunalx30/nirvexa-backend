@@ -302,10 +302,12 @@ def generate_interview_plan(job_role: str, experience_level: str, user_name: str
     job_role = (job_role or "").strip()
     if not job_role:
         return {"success": False, "error": "Job role is required."}
+    user_name = _first_name_only(user_name)
 
     prompt = f"""You are interviewing {user_name or 'the candidate'} for a {job_role} role ({experience_level} level).
 
 Generate a natural interview opening greeting AND a full question plan.
+For the greeting, use the candidate's first name at most once. Do not use a surname. Do not say hi/hello more than once.
 
 Return ONLY valid JSON (no markdown, no explanation):
 {{
@@ -875,16 +877,62 @@ def _ensure_plan_intro_question(questions: list) -> list:
 
 def _ensure_named_greeting(greeting: str, user_name: str, job_role: str) -> str:
     greeting = (greeting or "").strip()
-    name = (user_name or "").strip()
+    name = _first_name_only(user_name)
     if not name or name.lower() == "there":
-        return greeting or f"Hi there, I am Anya. I will be taking your mock interview for the {job_role} role today. Take a breath and answer naturally."
+        return _clean_greeting(greeting) or f"Hi there, I am Anya. I will be taking your mock interview for the {job_role} role today. Take a breath and answer naturally."
 
-    if name.lower() in greeting.lower():
+    greeting = _clean_greeting(greeting, name)
+    if greeting:
         return greeting
 
-    if greeting:
-        return f"Hi {name}, {greeting[0].lower()}{greeting[1:]}"
     return f"Hi {name}, I am Anya. I will be taking your mock interview for the {job_role} role today. Take a breath and answer naturally."
+
+
+def _first_name_only(value: str) -> str:
+    name = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not name or name.lower() == "there":
+        return name
+    return re.split(r"[\s@._-]+", name, maxsplit=1)[0].strip(" ,.!?") or name
+
+
+def _clean_greeting(greeting: str, first_name: str = "") -> str:
+    text = re.sub(r"\s+", " ", str(greeting or "")).strip()
+    if not text:
+        return ""
+
+    if first_name:
+        escaped = re.escape(first_name)
+        text = re.sub(
+            rf"^(hi|hello)\s+{escaped}(?:\s+[A-Za-z][A-Za-z'.-]*)*\s*,?\s*(hi|hello)\s+{escaped}\s*,?\s*",
+            f"Hi {first_name}, ",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            rf"^(hi|hello)\s+{escaped}\s+[A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*)*\s*,?",
+            f"Hi {first_name},",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not re.search(rf"\b{escaped}\b", text, flags=re.IGNORECASE):
+            text = re.sub(r"^(hi|hello)\s+(there|candidate)\s*,?\s*", "", text, flags=re.IGNORECASE)
+            text = f"Hi {first_name}, {text[:1].lower()}{text[1:]}" if text else f"Hi {first_name},"
+
+        seen = False
+
+        def keep_first(match):
+            nonlocal seen
+            if not seen:
+                seen = True
+                return match.group(0)
+            return ""
+
+        text = re.sub(rf"\b{escaped}\b", keep_first, text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\b(hi|hello)\s*,?\s+(hi|hello)\b", r"\1", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+,", ",", text)
+    text = re.sub(r",\s*,+", ", ", text)
+    return re.sub(r"\s+", " ", text).strip(" ,")
 
 
 def _ensure_minimum_plan_questions(questions: list, job_role: str, min_count: int = 12) -> list:
