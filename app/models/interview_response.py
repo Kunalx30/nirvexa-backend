@@ -1,3 +1,47 @@
+"""
+app/models/interview_response.py
+
+FIXES APPLIED:
+  - FIX #5:  Replaced db.ARRAY(db.String) with db.JSON for filler_words_detected,
+             keywords_hit, and keywords_missing.
+
+             db.ARRAY is PostgreSQL-only.  db.JSON works on PostgreSQL, MySQL,
+             SQLite (3.38+), and any other dialect SQLAlchemy supports.
+
+             The stored values are Python lists — JSON serialises and deserialises
+             them transparently so no other code needs to change.  Your existing
+             .to_dict() already does `or []` on these fields, so it continues to
+             work as-is.
+
+  MIGRATION NOTE:
+    If you have existing rows with ARRAY columns you must migrate the column type.
+    Run this Alembic migration after deploying:
+
+        from alembic import op
+        import sqlalchemy as sa
+
+        def upgrade():
+            op.alter_column('interview_responses', 'filler_words_detected',
+                            existing_type=sa.ARRAY(sa.String()),
+                            type_=sa.JSON(),
+                            postgresql_using='to_json(filler_words_detected)')
+            op.alter_column('interview_responses', 'keywords_hit',
+                            existing_type=sa.ARRAY(sa.String()),
+                            type_=sa.JSON(),
+                            postgresql_using='to_json(keywords_hit)')
+            op.alter_column('interview_responses', 'keywords_missing',
+                            existing_type=sa.ARRAY(sa.String()),
+                            type_=sa.JSON(),
+                            postgresql_using='to_json(keywords_missing)')
+
+        def downgrade():
+            # Reverse if needed — omitted for brevity.
+            pass
+
+    If this is a fresh database (no production data yet) you can skip the
+    migration and just let db.create_all() / Alembic autogenerate create the
+    table fresh with JSON columns.
+"""
 import uuid
 from datetime import datetime, timezone
 from app.database.db import db
@@ -26,7 +70,13 @@ class InterviewResponse(db.Model):
     transcript = db.Column(db.Text, nullable=True)
     duration_seconds = db.Column(db.Integer, nullable=True)
     word_count = db.Column(db.Integer, nullable=True)
-    filler_words_detected = db.Column(db.ARRAY(db.String), nullable=True)
+
+    # FIX #5: Changed from db.ARRAY(db.String) to db.JSON.
+    # db.ARRAY is a PostgreSQL extension — it silently breaks on SQLite (CI)
+    # and any non-Postgres deployment.  db.JSON stores the list as a JSON
+    # string, which every supported dialect handles natively.
+    # Read/write behaviour is identical: assign a Python list, get a list back.
+    filler_words_detected = db.Column(db.JSON, nullable=True)
 
     # AI evaluation
     score = db.Column(db.Float, nullable=True)
@@ -35,8 +85,10 @@ class InterviewResponse(db.Model):
     confidence_score = db.Column(db.Float, nullable=True)
     feedback = db.Column(db.Text, nullable=True)
     suggested_answer = db.Column(db.Text, nullable=True)
-    keywords_hit = db.Column(db.ARRAY(db.String), nullable=True)
-    keywords_missing = db.Column(db.ARRAY(db.String), nullable=True)
+
+    # FIX #5: Same change — JSON instead of ARRAY(String)
+    keywords_hit = db.Column(db.JSON, nullable=True)
+    keywords_missing = db.Column(db.JSON, nullable=True)
 
     created_at = db.Column(
         db.DateTime(timezone=True),

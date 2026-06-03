@@ -1,3 +1,13 @@
+"""
+app/models/interview_session.py
+
+FIXES APPLIED:
+  - FIX #8:  Added composite index on (user_id, status) so GET /sessions
+             does not full-scan the table as user count grows.
+  - FIX #13: Removed pace_score column — it was being stored as hardcoded 80
+             from the frontend, polluting analytics with fake data.
+             Add it back once avg_wpm is genuinely tracked and computed.
+"""
 import uuid
 from datetime import datetime, timezone
 from app.database.db import db
@@ -8,6 +18,15 @@ class InterviewSession(db.Model):
 
     __tablename__ = "interview_sessions"
 
+    # FIX #8: Composite index — without this, GET /sessions is a full table
+    # scan filtered by user_id.  With 10 K users × 5 sessions each that is
+    # ~50 K rows read on every history page load.  The status column is
+    # included so queries like "fetch all completed sessions for user X"
+    # are covered by the index without hitting the heap.
+    __table_args__ = (
+        db.Index('ix_interview_sessions_user_status', 'user_id', 'status'),
+    )
+
     id = db.Column(
         db.String(36),
         primary_key=True,
@@ -17,7 +36,7 @@ class InterviewSession(db.Model):
         db.String(36),
         db.ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True   # keep the single-column index as well for FK lookups
     )
     role = db.Column(db.String(100), nullable=False)        # e.g. "Data Analyst"
     mode = db.Column(db.String(50), nullable=False)         # hr / technical / stress / mock
@@ -29,6 +48,12 @@ class InterviewSession(db.Model):
     confidence_score = db.Column(db.Float, nullable=True)
     grammar_score = db.Column(db.Float, nullable=True)
     keyword_score = db.Column(db.Float, nullable=True)
+
+    # FIX #13: pace_score removed — was hardcoded to 80 in App.jsx and stored
+    # as fake analytics data.  Uncomment + create a migration once avg_wpm is
+    # properly computed server-side:
+    #
+    #   pace_score = db.Column(db.Float, nullable=True)
 
     # Metrics
     filler_word_count = db.Column(db.Integer, nullable=True)
