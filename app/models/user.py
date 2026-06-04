@@ -1,4 +1,5 @@
 import uuid
+import re
 from datetime import datetime, timezone
 from app.extensions import db
 
@@ -29,8 +30,20 @@ class User(db.Model):
     google_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
 
     # --- Profile ---
+    username = db.Column(db.String(80), unique=True, nullable=True, index=True)
     avatar_url = db.Column(db.Text, nullable=True)
     skills = db.Column(db.ARRAY(db.String), nullable=True, default=list)
+    bio = db.Column(db.Text, nullable=True)
+    linkedin_url = db.Column(db.String(255), nullable=True)
+    github_url = db.Column(db.String(255), nullable=True)
+    portfolio_url = db.Column(db.String(255), nullable=True)
+    target_roles = db.Column(db.ARRAY(db.String), nullable=True, default=list)
+    location_label = db.Column(db.String(100), nullable=True)
+    theme_gradient = db.Column(db.String(80), nullable=True)
+    public_profile_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    show_interview_scores = db.Column(db.Boolean, default=True, nullable=False)
+    show_skill_match = db.Column(db.Boolean, default=True, nullable=False)
+    show_resume_download = db.Column(db.Boolean, default=False, nullable=False)
     preferred_location = db.Column(db.String(100), nullable=True)
     job_type = db.Column(
         db.String(50),
@@ -78,6 +91,29 @@ class User(db.Model):
         """Call this every time a user successfully logs in."""
         self.last_login = datetime.now(timezone.utc)
 
+    @staticmethod
+    def slugify_username(value: str) -> str:
+        base = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower())
+        base = re.sub(r"-+", "-", base).strip("-")
+        return (base or "user")[:72]
+
+    @classmethod
+    def generate_unique_username(cls, full_name: str, current_user_id: str = None) -> str:
+        base = cls.slugify_username(full_name)
+        candidate = base
+        suffix = 2
+
+        while True:
+            query = cls.query.filter_by(username=candidate)
+            if current_user_id:
+                query = query.filter(cls.id != current_user_id)
+            if not query.first():
+                return candidate
+
+            suffix_text = f"-{suffix}"
+            candidate = f"{base[:80 - len(suffix_text)]}{suffix_text}"
+            suffix += 1
+
     def to_dict(self):
         """
         Safe public representation of the user.
@@ -85,10 +121,22 @@ class User(db.Model):
         """
         return {
             "id": self.id,
+            "username": self.username,
             "name": self.name,
             "email": self.email,
             "avatar_url": self.avatar_url,
             "skills": self.skills or [],
+            "bio": self.bio,
+            "linkedin_url": self.linkedin_url,
+            "github_url": self.github_url,
+            "portfolio_url": self.portfolio_url,
+            "target_roles": self.target_roles or [],
+            "location_label": self.location_label,
+            "theme_gradient": self.theme_gradient,
+            "public_profile_enabled": self.public_profile_enabled,
+            "show_interview_scores": self.show_interview_scores,
+            "show_skill_match": self.show_skill_match,
+            "show_resume_download": self.show_resume_download,
             "preferred_location": self.preferred_location,
             "job_type": self.job_type,
             "experience_level": self.experience_level,

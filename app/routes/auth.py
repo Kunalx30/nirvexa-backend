@@ -72,6 +72,7 @@ def register():
     new_user = User(
         name=name,
         email=email,
+        username=User.generate_unique_username(name),
         password_hash=password_hash,
         is_verified=False,
     )
@@ -209,6 +210,7 @@ def google_login():
             user = User(
                 name=name,
                 email=email,
+                username=User.generate_unique_username(name or email.split("@")[0]),
                 google_id=google_id,
                 avatar_url=avatar_url,
                 is_verified=True,

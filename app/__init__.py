@@ -146,6 +146,9 @@ def _register_blueprints(app: Flask):
     from app.routes.user import user_bp
     app.register_blueprint(user_bp)
 
+    from app.routes.profile import profile_bp
+    app.register_blueprint(profile_bp)
+
     from app.routes.news import news_bp
     app.register_blueprint(news_bp)
 
