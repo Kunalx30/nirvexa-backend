@@ -55,7 +55,7 @@ class Config:
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(
-        hours=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_HOURS", 168))
+        hours=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_HOURS", 1))
     )
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(
         days=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30))
@@ -65,11 +65,11 @@ class Config:
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
     # CORS
-    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # Rate Limiting
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day, 50 per hour")
-    RATELIMIT_STORAGE_URL = "memory://"
+    RATELIMIT_STORAGE_URL = os.getenv("REDIS_URL") or os.getenv("RATELIMIT_STORAGE_URL", "memory://")
 
       # Razorpay
     RAZORPAY_KEY_ID         = os.getenv("RAZORPAY_KEY_ID", "")
@@ -103,7 +103,7 @@ class ProductionConfig(Config):
     """Production environment — strict and secure."""
     DEBUG = False
     SQLALCHEMY_ECHO = False
-    RATELIMIT_STORAGE_URL = "memory://"  # Switch to Redis URL when scaling
+    RATELIMIT_STORAGE_URL = os.getenv("REDIS_URL") or os.getenv("RATELIMIT_STORAGE_URL", "memory://")  # Switch to Redis URL when scaling
 
 
 class TestingConfig(Config):

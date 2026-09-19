@@ -230,12 +230,17 @@ def evaluate():
         if not data:
             return jsonify({'error': 'Request body is required'}), 400
 
-        # FIX #3: Full-session evaluation (all_qa path) now checks premium.
+        # FIX #3: Full-session evaluation (all_qa path) checks premium.
         # This is the expensive path — it sends the entire interview to the LLM.
         if isinstance(data.get('all_qa'), list):
-            _check_premium_for_full_eval()
-            if hasattr(g, '_premium_error'):
-                return jsonify({'error': g._premium_error}), 403
+            from app.middleware.rate_limiter import check_premium_status
+            if not check_premium_status(getattr(g, 'user_id', None), "interview"):
+                return jsonify({
+                    "error": "premium_required",
+                    "message": "Full interview evaluation requires a Nyrvexa Pro subscription.",
+                    "feature": "interview",
+                    "upgrade_url": "/pricing",
+                }), 403
 
             from app.services.interview_service import generate_full_interview_evaluation
             result = generate_full_interview_evaluation(
@@ -282,26 +287,10 @@ def evaluate():
 
 
 def _check_premium_for_full_eval():
-    """
-    Inline premium check for the all_qa branch inside /evaluate.
-    Sets g._premium_error if the user is not premium so the caller
-    can return a 403 without decorators (which can't conditionally
-    gate a branch inside one route function).
-
-    This is intentionally simple — it reuses the same premium_required
-    logic your decorator uses.  If your premium_required decorator
-    exposes a helper function, call that instead.
-    """
-    try:
-        from app.middleware.rate_limiter import check_premium_status
-        if not check_premium_status(g.user_id, "interview"):
-            g._premium_error = "Premium subscription required for full interview evaluation."
-    except (ImportError, AttributeError):
-        # If check_premium_status is not exported from rate_limiter yet,
-        # this gracefully falls through — add the export when convenient.
-        # To be safe in production, flip the default to DENY:
-        # g._premium_error = "Premium subscription required."
-        pass
+    """Inline premium check for the all_qa branch inside /evaluate."""
+    from app.middleware.rate_limiter import check_premium_status
+    if not check_premium_status(getattr(g, 'user_id', None), "interview"):
+        g._premium_error = "Full interview evaluation requires a Nyrvexa Pro subscription."
 
 
 @interview_bp.route('/session', methods=['POST'])

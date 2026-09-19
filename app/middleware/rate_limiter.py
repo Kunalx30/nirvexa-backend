@@ -1,3 +1,4 @@
+import os
 """IP throttles plus per-user feature quotas."""
 
 from datetime import date, datetime, timezone
@@ -15,7 +16,7 @@ from app.models.user import User
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://",
+    storage_uri=os.getenv("REDIS_URL") or os.getenv("RATELIMIT_STORAGE_URL", "memory://"),
 )
 
 
@@ -117,6 +118,15 @@ def _is_premium_active(user) -> bool:
         return False
 
     return True
+
+
+def check_premium_status(user_id, feature: str = "premium") -> bool:
+    """Check if the user has an active premium subscription."""
+    if not user_id:
+        return False
+    user = User.query.get(str(user_id))
+    return _is_premium_active(user)
+
 
 
 def get_current_user():

@@ -60,7 +60,6 @@ def create_app(env: str = None) -> Flask:
                 "http://localhost:3000",
                 "http://10.0.2.2",
                 "http://10.0.2.2:5000",
-                "null",
             ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
             "allow_headers": [
@@ -196,7 +195,7 @@ def _register_error_handlers(app: Flask):
     def not_found(e):
         response = jsonify({"error": "Not Found", "message": "The requested resource does not exist"})
         origin = request.headers.get("Origin")
-        allowed = [
+        allowed = app.config.get("CORS_ORIGINS") or [
             "https://nyrvexa.in",
             "https://www.nyrvexa.in",
             "https://nyrvexa-frontend.vercel.app",
@@ -205,8 +204,8 @@ def _register_error_handlers(app: Flask):
             "http://localhost:3000",
         ]
         if origin in allowed:
-          response.headers.add("Access-Control-Allow-Origin", origin)
-        response.headers.add("Access-Control-Allow-Credentials", "true")
+            response.headers.add("Access-Control-Allow-Origin", origin)
+            response.headers.add("Access-Control-Allow-Credentials", "true")
         return response, 404
     
     @app.errorhandler(429)

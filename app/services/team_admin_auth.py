@@ -85,7 +85,8 @@ def issue_otp(email: str) -> str:
     except RuntimeError:
         debug_mode = os.getenv("FLASK_ENV", "development") == "development"
 
-    if dev_otp and debug_mode:
+    is_production = (os.getenv("FLASK_ENV", "").lower() == "production") or (not debug_mode)
+    if dev_otp and not is_production:
         code = dev_otp
     else:
         code = f"{random.randint(100000, 999999)}"
@@ -105,7 +106,8 @@ def verify_otp(email: str, code: str) -> bool:
         debug_mode = os.getenv("FLASK_ENV", "development") == "development"
 
     # Dev: accept fixed OTP even if store was cleared (restart) or code was already used
-    if dev_otp and debug_mode and code == dev_otp and is_allowed_admin_email(email):
+    is_production = (os.getenv("FLASK_ENV", "").lower() == "production") or (not debug_mode)
+    if dev_otp and not is_production and code == dev_otp and is_allowed_admin_email(email):
         with _otp_lock:
             _otp_store.pop(email, None)
         # #region agent log

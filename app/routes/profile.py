@@ -77,25 +77,6 @@ def _parse_raw_response(raw):
 
 
 def _latest_skill_match(user):
-    try:
-        from app.models.skill_match import SkillMatch
-
-        record = (
-            SkillMatch.query
-            .filter_by(user_id=user.id)
-            .order_by(SkillMatch.created_at.desc())
-            .first()
-        )
-        if record:
-            return {
-                "role": record.role,
-                "match_pct": record.match_pct,
-                "matched": record.matched_skills or [],
-                "missing": record.missing_skills or [],
-            }
-    except Exception:
-        pass
-
     analysis = (
         ResumeAnalysis.query
         .filter_by(user_id=user.id)
