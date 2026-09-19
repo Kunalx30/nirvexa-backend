@@ -29,6 +29,10 @@ class TestAIEnginePhase1(unittest.TestCase):
         self.app = create_app("testing")
         self.app.config["AI_ENGINE_ENABLED"] = True
         self.client = self.app.test_client()
+        from app.utils.helpers import generate_access_token
+        with self.app.app_context():
+            token = generate_access_token("test-user-phase1")
+        self.client.environ_base = {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
     # ─────────────────────────────────────────────────────────────
     # 1. Search Response Normalization

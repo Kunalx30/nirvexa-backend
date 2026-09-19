@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app.ai_engine.coordinator import WebResearchEngine
 from app.ai_engine.schemas.research import SearchRequest
+from app.middleware.auth_middleware import token_required
 from app.middleware.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -25,16 +26,18 @@ _MAX_REQUEST_BYTES = 4096  # 4 KB is far more than any valid SearchRequest
 
 
 @ai_engine_bp.route("/research/search", methods=["POST"])
+@token_required
 @limiter.limit("10 per minute")
 def research_search():
     """
     POST /api/ai/research/search
+    Authenticated: requires valid JWT Bearer access token.
     Rate-limited: 10 requests per IP per minute.
     Accepts: { "query": str, "max_results": Optional[int], "fetch_content": Optional[bool] }
     Returns: ResearchResponse JSON with structured search results and extracted webpage content.
     """
     # 1. Feature flag guard
-    if not current_app.config.get("AI_ENGINE_ENABLED", True):
+    if not current_app.config.get("AI_ENGINE_ENABLED", False):
         return jsonify({
             "error": "ai_engine_disabled",
             "message": "AI Engine web research is currently disabled.",

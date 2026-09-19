@@ -94,7 +94,7 @@ class Config:
             return default
         return max(min_val, min(parsed, max_val))
 
-    AI_ENGINE_ENABLED = os.getenv("AI_ENGINE_ENABLED", "true").lower() in ("true", "1", "yes")
+    AI_ENGINE_ENABLED = os.getenv("AI_ENGINE_ENABLED", "false").lower() in ("true", "1", "yes")
     AI_ENGINE_SEARCH_PROVIDER = os.getenv("AI_ENGINE_SEARCH_PROVIDER", "duckduckgo")
     AI_ENGINE_FETCH_TIMEOUT_SECONDS = _safe_int.__func__(
         os.getenv("AI_ENGINE_FETCH_TIMEOUT_SECONDS", "5"),
