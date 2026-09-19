@@ -84,6 +84,27 @@ class Config:
     TEAM_ADMIN_DEV_OTP   = os.getenv("TEAM_ADMIN_DEV_OTP", "").strip()
 
 
+    # AI Engine Phase 1
+    # Safe int helper: falls back to default on non-numeric values and clamps to [min_val, max_val].
+    @staticmethod
+    def _safe_int(value: str, default: int, min_val: int, max_val: int) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(min_val, min(parsed, max_val))
+
+    AI_ENGINE_ENABLED = os.getenv("AI_ENGINE_ENABLED", "true").lower() in ("true", "1", "yes")
+    AI_ENGINE_SEARCH_PROVIDER = os.getenv("AI_ENGINE_SEARCH_PROVIDER", "duckduckgo")
+    AI_ENGINE_FETCH_TIMEOUT_SECONDS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_FETCH_TIMEOUT_SECONDS", "5"),
+        default=5, min_val=1, max_val=30
+    )
+    AI_ENGINE_MAX_FETCH_WORKERS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_FETCH_WORKERS", "4"),
+        default=4, min_val=1, max_val=10
+    )
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10

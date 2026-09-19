@@ -41,8 +41,9 @@ def create_app(env: str = None) -> Flask:
         from app.models.support_ticket import SupportTicket     # noqa
         from app.models.admin_job import AdminJob               # noqa
         from app.extensions import db
-        db.create_all()
-        app.logger.info("Database tables verified (including admin_jobs).")
+        if not app.config.get("TESTING"):
+            db.create_all()
+            app.logger.info("Database tables verified (including admin_jobs).")
 
     # --- Initialize Rate Limiter ---
     limiter.init_app(app)
@@ -162,6 +163,9 @@ def _register_blueprints(app: Flask):
 
     from app.routes.admin import admin_bp
     app.register_blueprint(admin_bp)
+
+    from app.routes.ai_engine import ai_engine_bp
+    app.register_blueprint(ai_engine_bp, url_prefix="/api/ai")
 
 
 def _register_error_handlers(app: Flask):
