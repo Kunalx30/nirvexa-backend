@@ -14,7 +14,7 @@ from app.ai_engine.fetch.web_fetcher import WebFetcher
 from app.ai_engine.reasoning.engine import ReasoningEngine
 from app.ai_engine.reasoning.schemas import AnswerResponse
 from app.ai_engine.retrieval.evidence import EvidenceBuilder
-from app.ai_engine.retrieval.schemas import EvidencePack
+from app.ai_engine.retrieval.schemas import EvidencePack, RetrievalResult
 from app.ai_engine.schemas.research import (
     SearchRequest,
     SourceMetadata,
@@ -23,6 +23,7 @@ from app.ai_engine.schemas.research import (
 )
 from app.ai_engine.search.models import RawSearchResult
 from app.ai_engine.search.service import SearchService
+from app.ai_engine.documents.service import DocumentService
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +42,13 @@ class WebResearchEngine:
         fetcher: Optional[WebFetcher] = None,
         evidence_builder: Optional[EvidenceBuilder] = None,
         reasoning_engine: Optional[ReasoningEngine] = None,
+        document_service: Optional[DocumentService] = None,
     ):
         self.search_service = search_service or SearchService()
         self.fetcher = fetcher or WebFetcher()
         self.evidence_builder = evidence_builder or EvidenceBuilder()
         self.reasoning_engine = reasoning_engine or ReasoningEngine()
+        self.document_service = document_service or DocumentService()
 
     def research(self, request: SearchRequest) -> ResearchResponse:
         """
@@ -214,11 +217,44 @@ class WebResearchEngine:
         request: SearchRequest,
         max_evidence_items: Optional[int] = None,
         max_evidence_chars: Optional[int] = None,
+        search_mode: str = "web",
+        user_id: Optional[str] = None,
     ) -> EvidencePack:
         """
-        Phase 2: Execute end-to-end research and build structured, ranked EvidencePack.
-        Preserves complete backward compatibility with Phase 1.
+        Phase 2 & 4: Execute research and/or document retrieval to build ranked EvidencePack.
+        Supports search_mode: 'web', 'document', or 'hybrid'.
+        Preserves complete backward compatibility with Phase 1 & 2.
         """
+        mode = (search_mode or "web").lower().strip()
+
+        if mode == "document":
+            doc_candidates = self.document_service.retrieve_candidates_for_query(
+                user_id=user_id or "",
+                query=request.query,
+            )
+            return self.evidence_builder.build_pack(
+                query=request.query,
+                candidates=doc_candidates,
+                max_evidence_items=max_evidence_items,
+                max_evidence_chars=max_evidence_chars,
+            )
+
+        if mode == "hybrid":
+            research_response = self.research(request)
+            web_candidates = self.evidence_builder.retrieval_service.from_research_response(research_response)
+            doc_candidates = self.document_service.retrieve_candidates_for_query(
+                user_id=user_id or "",
+                query=request.query,
+            )
+            combined_candidates = web_candidates + doc_candidates
+            return self.evidence_builder.build_pack(
+                query=request.query,
+                candidates=combined_candidates,
+                max_evidence_items=max_evidence_items,
+                max_evidence_chars=max_evidence_chars,
+            )
+
+        # Default: 'web'
         research_response = self.research(request)
         return self.evidence_builder.build_pack(
             query=request.query,
@@ -232,15 +268,19 @@ class WebResearchEngine:
         request: SearchRequest,
         max_evidence_items: Optional[int] = None,
         max_evidence_chars: Optional[int] = None,
+        search_mode: str = "web",
+        user_id: Optional[str] = None,
     ) -> AnswerResponse:
         """
-        Phase 3: Execute end-to-end research, build evidence, and synthesize grounded answer.
+        Phase 3 & 4: Execute research/document retrieval, build evidence, and synthesize grounded answer.
         Does not perform additional web scraping in the reasoning layer.
         """
         evidence_pack = self.research_evidence(
             request=request,
             max_evidence_items=max_evidence_items,
             max_evidence_chars=max_evidence_chars,
+            search_mode=search_mode,
+            user_id=user_id,
         )
         return self.reasoning_engine.answer(
             query=request.query,

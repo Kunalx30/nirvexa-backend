@@ -161,6 +161,21 @@ class Config:
         default=0.2, min_val=0.0, max_val=1.0
     )
 
+    # AI Engine Phase 4 Document Ingestion & Knowledge Base
+    AI_ENGINE_DOCUMENTS_ENABLED = os.getenv("AI_ENGINE_DOCUMENTS_ENABLED", "true").lower() in ("true", "1", "yes")
+    AI_ENGINE_MAX_DOC_SIZE_BYTES = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_DOC_SIZE_BYTES", "5242880"),
+        default=5242880, min_val=1048576, max_val=20971520
+    )
+    AI_ENGINE_MAX_DOCS_PER_USER = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_DOCS_PER_USER", "10"),
+        default=10, min_val=1, max_val=50
+    )
+    AI_ENGINE_MAX_DOC_CHUNKS_PER_USER = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_DOC_CHUNKS_PER_USER", "250"),
+        default=250, min_val=50, max_val=2000
+    )
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10

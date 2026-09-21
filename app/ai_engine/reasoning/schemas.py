@@ -16,6 +16,7 @@ class AnswerRequest(BaseModel):
     """
     query: str = Field(..., description="The question or research query.")
     max_results: int = Field(default=5, ge=1, le=10, description="Max web search results to retrieve (1-10).")
+    search_mode: Literal["web", "document", "hybrid"] = Field(default="web", description="Retrieval source mode.")
     max_evidence_items: Optional[int] = Field(default=None, ge=1, le=50, description="Max evidence chunks to evaluate.")
     max_evidence_chars: Optional[int] = Field(default=None, ge=100, le=100000, description="Max cumulative evidence characters.")
 

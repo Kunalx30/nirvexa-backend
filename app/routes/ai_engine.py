@@ -3,10 +3,12 @@ app/routes/ai_engine.py
 Flask Blueprint for Nirvexa AI Engine Phase 1 & 2 endpoints.
 """
 import logging
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from pydantic import ValidationError
 
 from app.ai_engine.coordinator import WebResearchEngine
+from app.ai_engine.documents.parser import DocumentParserError
+from app.ai_engine.documents.service import QuotaExceededError
 from app.ai_engine.reasoning.schemas import AnswerRequest
 from app.ai_engine.retrieval.schemas import EvidenceRequest
 from app.ai_engine.schemas.research import SearchRequest
@@ -162,7 +164,15 @@ def research_evidence():
             "message": str(e),
         }), 400
 
-    # 5. Execute research + evidence pipeline
+    # 5. Check document feature flag if search_mode uses documents
+    if getattr(evidence_req, "search_mode", "web") in ("document", "hybrid"):
+        if not current_app.config.get("AI_ENGINE_DOCUMENTS_ENABLED", True):
+            return jsonify({
+                "error": "ai_engine_documents_disabled",
+                "message": "Document retrieval is currently disabled.",
+            }), 503
+
+    # 6. Execute research + evidence pipeline
     try:
         search_req = SearchRequest(
             query=evidence_req.query,
@@ -173,6 +183,8 @@ def research_evidence():
             search_req,
             max_evidence_items=evidence_req.max_evidence_items,
             max_evidence_chars=evidence_req.max_evidence_chars,
+            search_mode=getattr(evidence_req, "search_mode", "web"),
+            user_id=getattr(g, "user_id", None),
         )
         if hasattr(evidence_pack, "model_dump"):
             payload = evidence_pack.model_dump()
@@ -204,7 +216,7 @@ def research_answer():
     Phase 1 (Search & Fetch) -> Phase 2 (Chunk & Rerank) -> Phase 3 (Reason & Grounded Citations).
     Authenticated: requires valid JWT Bearer access token.
     Rate-limited: 10 requests per IP per minute.
-    Accepts: { "query": str, "max_results": Optional[int], "max_evidence_items": Optional[int], "max_evidence_chars": Optional[int] }
+    Accepts: { "query": str, "max_results": Optional[int], "search_mode": Optional[str], "max_evidence_items": Optional[int], "max_evidence_chars": Optional[int] }
     Returns: AnswerResponse JSON with grounded answer text, verified citations, and generation metadata.
     """
     # 1. Feature flag guards
@@ -255,7 +267,15 @@ def research_answer():
             "message": str(e),
         }), 400
 
-    # 5. Execute end-to-end research, evidence, and grounded reasoning pipeline
+    # 5. Check document feature flag if search_mode uses documents
+    if getattr(answer_req, "search_mode", "web") in ("document", "hybrid"):
+        if not current_app.config.get("AI_ENGINE_DOCUMENTS_ENABLED", True):
+            return jsonify({
+                "error": "ai_engine_documents_disabled",
+                "message": "Document retrieval is currently disabled.",
+            }), 503
+
+    # 6. Execute end-to-end research, evidence, and grounded reasoning pipeline
     try:
         search_req = SearchRequest(
             query=answer_req.query,
@@ -266,6 +286,8 @@ def research_answer():
             search_req,
             max_evidence_items=answer_req.max_evidence_items,
             max_evidence_chars=answer_req.max_evidence_chars,
+            search_mode=getattr(answer_req, "search_mode", "web"),
+            user_id=getattr(g, "user_id", None),
         )
         if hasattr(answer_resp, "model_dump"):
             payload = answer_resp.model_dump()
@@ -284,4 +306,173 @@ def research_answer():
         return jsonify({
             "error": "reasoning_failed",
             "message": "An error occurred while generating grounded research answer.",
+        }), 500
+
+
+# ==============================================================================
+# Phase 4 Document Ingestion & Knowledge Base Endpoints
+# ==============================================================================
+
+@ai_engine_bp.route("/documents/upload", methods=["POST"])
+@token_required
+@limiter.limit("5 per minute")
+def upload_document():
+    """
+    POST /api/ai/documents/upload
+    Uploads and indexes a private user document (.pdf, .txt, .md).
+    Authenticated: requires valid JWT Bearer access token.
+    Rate-limited: 5 requests per IP/user per minute.
+    Accepts: multipart/form-data with 'file' and optional 'title'.
+    """
+    if not current_app.config.get("AI_ENGINE_ENABLED", False):
+        return jsonify({
+            "error": "ai_engine_disabled",
+            "message": "AI Engine is currently disabled.",
+        }), 503
+
+    if not current_app.config.get("AI_ENGINE_DOCUMENTS_ENABLED", True):
+        return jsonify({
+            "error": "ai_engine_documents_disabled",
+            "message": "Document ingestion and private knowledge base are currently disabled.",
+        }), 503
+
+    user_id = getattr(g, "user_id", None)
+    if not user_id:
+        return jsonify({"error": "unauthorized", "message": "Authentication required."}), 401
+
+    if "file" not in request.files:
+        return jsonify({
+            "error": "validation_error",
+            "message": "Missing required file field in multipart request.",
+        }), 400
+
+    file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({
+            "error": "validation_error",
+            "message": "No file selected for upload.",
+        }), 400
+
+    max_size = current_app.config.get("AI_ENGINE_MAX_DOC_SIZE_BYTES", 5242880)
+    file_bytes = file.read()
+    if len(file_bytes) > max_size:
+        return jsonify({
+            "error": "request_too_large",
+            "message": f"Uploaded file exceeds maximum limit of {max_size} bytes ({max_size // 1048576}MB).",
+        }), 413
+
+    title = request.form.get("title")
+
+    try:
+        doc = _engine.document_service.upload_document(
+            user_id=user_id,
+            file_bytes=file_bytes,
+            filename=file.filename,
+            title=title,
+        )
+        return jsonify({
+            "document": doc.to_dict(),
+            "message": "Document uploaded and indexed successfully.",
+        }), 201
+
+    except QuotaExceededError as e:
+        return jsonify({
+            "error": "quota_exceeded",
+            "message": str(e),
+        }), 400
+    except (DocumentParserError, ValueError) as e:
+        return jsonify({
+            "error": "validation_error",
+            "message": str(e),
+        }), 400
+    except Exception as e:
+        logger.error("[AI Engine] Document upload failed for user=%s: %s", user_id, e, exc_info=True)
+        return jsonify({
+            "error": "upload_failed",
+            "message": "An error occurred while uploading and parsing the document.",
+        }), 500
+
+
+@ai_engine_bp.route("/documents", methods=["GET"])
+@token_required
+@limiter.limit("30 per minute")
+def list_documents():
+    """
+    GET /api/ai/documents
+    Lists all indexed private documents for the authenticated user.
+    """
+    if not current_app.config.get("AI_ENGINE_ENABLED", False):
+        return jsonify({
+            "error": "ai_engine_disabled",
+            "message": "AI Engine is currently disabled.",
+        }), 503
+
+    if not current_app.config.get("AI_ENGINE_DOCUMENTS_ENABLED", True):
+        return jsonify({
+            "error": "ai_engine_documents_disabled",
+            "message": "Document ingestion is currently disabled.",
+        }), 503
+
+    user_id = getattr(g, "user_id", None)
+    if not user_id:
+        return jsonify({"error": "unauthorized", "message": "Authentication required."}), 401
+
+    try:
+        docs = _engine.document_service.list_documents(user_id=user_id)
+        doc_list = [d.to_dict() for d in docs]
+        total_chunks = sum(d.chunk_count for d in docs)
+        return jsonify({
+            "documents": doc_list,
+            "total_documents": len(doc_list),
+            "total_chunks": total_chunks,
+        }), 200
+    except Exception as e:
+        logger.error("[AI Engine] Failed to list documents for user=%s: %s", user_id, e, exc_info=True)
+        return jsonify({
+            "error": "list_failed",
+            "message": "An error occurred while listing documents.",
+        }), 500
+
+
+@ai_engine_bp.route("/documents/<document_id>", methods=["DELETE"])
+@token_required
+@limiter.limit("10 per minute")
+def delete_document(document_id: str):
+    """
+    DELETE /api/ai/documents/<document_id>
+    Deletes a user-owned document and all associated chunks.
+    """
+    if not current_app.config.get("AI_ENGINE_ENABLED", False):
+        return jsonify({
+            "error": "ai_engine_disabled",
+            "message": "AI Engine is currently disabled.",
+        }), 503
+
+    if not current_app.config.get("AI_ENGINE_DOCUMENTS_ENABLED", True):
+        return jsonify({
+            "error": "ai_engine_documents_disabled",
+            "message": "Document ingestion is currently disabled.",
+        }), 503
+
+    user_id = getattr(g, "user_id", None)
+    if not user_id:
+        return jsonify({"error": "unauthorized", "message": "Authentication required."}), 401
+
+    try:
+        success = _engine.document_service.delete_document(user_id=user_id, document_id=document_id)
+        if not success:
+            return jsonify({
+                "error": "not_found",
+                "message": "Document not found or access denied.",
+            }), 404
+
+        return jsonify({
+            "message": "Document deleted successfully.",
+            "document_id": document_id,
+        }), 200
+    except Exception as e:
+        logger.error("[AI Engine] Failed to delete document=%s for user=%s: %s", document_id, user_id, e, exc_info=True)
+        return jsonify({
+            "error": "delete_failed",
+            "message": "An error occurred while deleting the document.",
         }), 500

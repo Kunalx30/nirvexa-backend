@@ -40,6 +40,7 @@ def create_app(env: str = None) -> Flask:
         from app.models.payment import Payment                 # noqa
         from app.models.support_ticket import SupportTicket     # noqa
         from app.models.admin_job import AdminJob               # noqa
+        from app.models.ai_document import AIDocument, AIDocumentChunk  # noqa
         from app.extensions import db
         if not app.config.get("TESTING"):
             db.create_all()
