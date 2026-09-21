@@ -176,6 +176,23 @@ class Config:
         default=250, min_val=50, max_val=2000
     )
 
+    # AI Engine Phase 5 Semantic Retrieval & Embeddings
+    AI_ENGINE_SEMANTIC_ENABLED = os.getenv("AI_ENGINE_SEMANTIC_ENABLED", "false").lower() in ("true", "1", "yes")
+    AI_ENGINE_EMBEDDING_PROVIDER = os.getenv("AI_ENGINE_EMBEDDING_PROVIDER", "gemini").lower()
+    AI_ENGINE_EMBEDDING_MODEL = os.getenv("AI_ENGINE_EMBEDDING_MODEL", "text-embedding-004")
+    AI_ENGINE_EMBEDDING_DIMENSION = _safe_int.__func__(
+        os.getenv("AI_ENGINE_EMBEDDING_DIMENSION", "768"),
+        default=768, min_val=64, max_val=4096
+    )
+    AI_ENGINE_SEMANTIC_TOP_K = _safe_int.__func__(
+        os.getenv("AI_ENGINE_SEMANTIC_TOP_K", "25"),
+        default=25, min_val=5, max_val=100
+    )
+    AI_ENGINE_HYBRID_TOP_K = _safe_int.__func__(
+        os.getenv("AI_ENGINE_HYBRID_TOP_K", "30"),
+        default=30, min_val=5, max_val=100
+    )
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10

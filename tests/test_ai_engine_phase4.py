@@ -29,6 +29,7 @@ def app():
     test_app = create_app("testing")
     test_app.config["AI_ENGINE_ENABLED"] = True
     test_app.config["AI_ENGINE_LLM_ENABLED"] = True
+    test_app.config["AI_ENGINE_LLM_PROVIDER"] = "mock"
     test_app.config["AI_ENGINE_DOCUMENTS_ENABLED"] = True
     test_app.config["RATELIMIT_ENABLED"] = False
     test_app.config["AI_ENGINE_MAX_DOCS_PER_USER"] = 3
