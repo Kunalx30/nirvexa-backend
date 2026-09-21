@@ -84,12 +84,20 @@ class Config:
     TEAM_ADMIN_DEV_OTP   = os.getenv("TEAM_ADMIN_DEV_OTP", "").strip()
 
 
-    # AI Engine Phase 1
-    # Safe int helper: falls back to default on non-numeric values and clamps to [min_val, max_val].
+    # AI Engine Phase 1 & 2
+    # Safe numeric helpers: fall back to default on non-numeric values and clamp to [min_val, max_val].
     @staticmethod
     def _safe_int(value: str, default: int, min_val: int, max_val: int) -> int:
         try:
             parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(min_val, min(parsed, max_val))
+
+    @staticmethod
+    def _safe_float(value: str, default: float, min_val: float, max_val: float) -> float:
+        try:
+            parsed = float(value)
         except (TypeError, ValueError):
             return default
         return max(min_val, min(parsed, max_val))
@@ -103,6 +111,54 @@ class Config:
     AI_ENGINE_MAX_FETCH_WORKERS = _safe_int.__func__(
         os.getenv("AI_ENGINE_MAX_FETCH_WORKERS", "4"),
         default=4, min_val=1, max_val=10
+    )
+
+    # AI Engine Phase 2 Retrieval & Evidence Context Budget
+    AI_ENGINE_MAX_EVIDENCE_ITEMS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_EVIDENCE_ITEMS", "10"),
+        default=10, min_val=1, max_val=50
+    )
+    AI_ENGINE_MAX_EVIDENCE_CHARS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_EVIDENCE_CHARS", "12000"),
+        default=12000, min_val=500, max_val=100000
+    )
+    AI_ENGINE_MAX_CHUNK_CHARS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_CHUNK_CHARS", "1000"),
+        default=1000, min_val=100, max_val=5000
+    )
+    AI_ENGINE_CHUNK_OVERLAP_CHARS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_CHUNK_OVERLAP_CHARS", "100"),
+        default=100, min_val=0, max_val=500
+    )
+    AI_ENGINE_MAX_CANDIDATES = _safe_int.__func__(
+        os.getenv("AI_ENGINE_MAX_CANDIDATES", "20"),
+        default=20, min_val=1, max_val=100
+    )
+    AI_ENGINE_MIN_RELEVANCE_SCORE = _safe_float.__func__(
+        os.getenv("AI_ENGINE_MIN_RELEVANCE_SCORE", "0.10"),
+        default=0.10, min_val=0.0, max_val=1.0
+    )
+
+    # AI Engine Phase 3 Reasoning & Generation
+    AI_ENGINE_LLM_ENABLED = os.getenv("AI_ENGINE_LLM_ENABLED", "false").lower() in ("true", "1", "yes")
+    AI_ENGINE_LLM_PROVIDER = os.getenv("AI_ENGINE_LLM_PROVIDER", "gemini").lower()
+    AI_ENGINE_LLM_MODEL = os.getenv("AI_ENGINE_LLM_MODEL", "gemini-2.5-flash")
+    AI_ENGINE_OLLAMA_BASE_URL = os.getenv("AI_ENGINE_OLLAMA_BASE_URL", "http://localhost:11434/v1").strip()
+    AI_ENGINE_LLM_TIMEOUT_SECONDS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LLM_TIMEOUT_SECONDS", "30"),
+        default=30, min_val=5, max_val=120
+    )
+    AI_ENGINE_LLM_MAX_TOKENS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LLM_MAX_TOKENS", "1024"),
+        default=1024, min_val=128, max_val=4096
+    )
+    AI_ENGINE_LLM_MAX_RETRIES = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LLM_MAX_RETRIES", "2"),
+        default=2, min_val=0, max_val=5
+    )
+    AI_ENGINE_LLM_TEMPERATURE = _safe_float.__func__(
+        os.getenv("AI_ENGINE_LLM_TEMPERATURE", "0.2"),
+        default=0.2, min_val=0.0, max_val=1.0
     )
 
     # Interview AI Config

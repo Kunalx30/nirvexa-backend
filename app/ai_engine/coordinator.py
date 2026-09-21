@@ -11,6 +11,10 @@ from typing import Optional, List, Tuple
 from app.ai_engine.extraction.content_extractor import ContentExtractor
 from app.ai_engine.fetch.url_validator import normalize_url
 from app.ai_engine.fetch.web_fetcher import WebFetcher
+from app.ai_engine.reasoning.engine import ReasoningEngine
+from app.ai_engine.reasoning.schemas import AnswerResponse
+from app.ai_engine.retrieval.evidence import EvidenceBuilder
+from app.ai_engine.retrieval.schemas import EvidencePack
 from app.ai_engine.schemas.research import (
     SearchRequest,
     SourceMetadata,
@@ -25,18 +29,23 @@ logger = logging.getLogger(__name__)
 
 class WebResearchEngine:
     """
-    Phase 1 Web Research Engine.
+    Phase 1, 2 & 3 Web Research, Evidence, and Grounded Reasoning Engine.
     Executes search, deduplicates URLs, safely fetches pages,
-    and extracts clean full content and source metadata.
+    extracts clean full content, constructs structured EvidencePacks,
+    and synthesizes verifiable, grounded answers.
     """
 
     def __init__(
         self,
         search_service: Optional[SearchService] = None,
         fetcher: Optional[WebFetcher] = None,
+        evidence_builder: Optional[EvidenceBuilder] = None,
+        reasoning_engine: Optional[ReasoningEngine] = None,
     ):
         self.search_service = search_service or SearchService()
         self.fetcher = fetcher or WebFetcher()
+        self.evidence_builder = evidence_builder or EvidenceBuilder()
+        self.reasoning_engine = reasoning_engine or ReasoningEngine()
 
     def research(self, request: SearchRequest) -> ResearchResponse:
         """
@@ -198,4 +207,42 @@ class WebResearchEngine:
             retrieved_at=retrieved_at,
             search_status="success",
             status_message="",
+        )
+
+    def research_evidence(
+        self,
+        request: SearchRequest,
+        max_evidence_items: Optional[int] = None,
+        max_evidence_chars: Optional[int] = None,
+    ) -> EvidencePack:
+        """
+        Phase 2: Execute end-to-end research and build structured, ranked EvidencePack.
+        Preserves complete backward compatibility with Phase 1.
+        """
+        research_response = self.research(request)
+        return self.evidence_builder.build_pack(
+            query=request.query,
+            candidates=research_response,
+            max_evidence_items=max_evidence_items,
+            max_evidence_chars=max_evidence_chars,
+        )
+
+    def research_and_answer(
+        self,
+        request: SearchRequest,
+        max_evidence_items: Optional[int] = None,
+        max_evidence_chars: Optional[int] = None,
+    ) -> AnswerResponse:
+        """
+        Phase 3: Execute end-to-end research, build evidence, and synthesize grounded answer.
+        Does not perform additional web scraping in the reasoning layer.
+        """
+        evidence_pack = self.research_evidence(
+            request=request,
+            max_evidence_items=max_evidence_items,
+            max_evidence_chars=max_evidence_chars,
+        )
+        return self.reasoning_engine.answer(
+            query=request.query,
+            evidence_pack=evidence_pack,
         )
