@@ -62,10 +62,11 @@ class WebResearchEngine:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         allow_cloud_fallback: Optional[bool] = None,
+        complexity: Optional[str] = None,
         **kwargs,
     ) -> Any:
         """
-        Phase 7 Step 7: Centralized task execution entrypoint.
+        Phase 7 & 8: Centralized task execution entrypoint.
         Routes the task through ModelRouter and dispatches to LocalModelAdapter or Cloud provider.
         """
         return self.task_executor.execute(
@@ -76,6 +77,7 @@ class WebResearchEngine:
             temperature=temperature,
             max_tokens=max_tokens,
             allow_cloud_fallback=allow_cloud_fallback,
+            complexity=complexity,
             **kwargs,
         )
 

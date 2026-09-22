@@ -197,6 +197,7 @@ class TaskExecutor:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         allow_cloud_fallback: Optional[bool] = None,
+        complexity: Optional[str] = None,
         **kwargs,
     ) -> TaskExecutionResult:
         """
@@ -214,8 +215,13 @@ class TaskExecutor:
 
         clean_task = str(task).strip().lower() if task else "text_generation"
 
-        # Step 1: Query ModelRouter with discovery and policy integration
-        decision = self.router.resolve_route(clean_task, discovery=self.discovery, policy=self.policy)
+        # Step 1: Query ModelRouter with discovery, policy, and complexity integration
+        decision = self.router.resolve_route(
+            clean_task,
+            discovery=self.discovery,
+            policy=self.policy,
+            complexity=complexity,
+        )
 
         # Fallback permission check
         can_fallback = (
@@ -242,6 +248,7 @@ class TaskExecutor:
                         "configured_model": decision.model,
                         "configured_model_available": False,
                         "recommended_model": decision.metadata.get("recommended_model"),
+                        "policy_decision": decision.metadata.get("policy_decision"),
                     }
                     return self._execute_cloud(clean_task, decision, prompt, system_prompt, temperature, max_tokens, meta, t0)
 
@@ -259,6 +266,7 @@ class TaskExecutor:
                         "configured_model": decision.model,
                         "configured_model_available": False,
                         "recommended_model": decision.metadata.get("recommended_model"),
+                        "policy_decision": decision.metadata.get("policy_decision"),
                     },
                 )
 
@@ -280,6 +288,7 @@ class TaskExecutor:
                         "configured_model": decision.model,
                         "configured_model_available": False,
                         "recommended_model": rec_model,
+                        "policy_decision": decision.metadata.get("policy_decision"),
                     }
                     return self._execute_cloud(clean_task, decision, prompt, system_prompt, temperature, max_tokens, meta, t0)
 
@@ -297,6 +306,7 @@ class TaskExecutor:
                         "configured_model": decision.model,
                         "configured_model_available": False,
                         "recommended_model": rec_model,
+                        "policy_decision": decision.metadata.get("policy_decision"),
                     },
                 )
 
@@ -310,6 +320,11 @@ class TaskExecutor:
             )
 
             if local_resp.success:
+                resp_meta = dict(local_resp.metadata)
+                if "recommended_model" in decision.metadata:
+                    resp_meta["recommended_model"] = decision.metadata["recommended_model"]
+                if "policy_decision" in decision.metadata:
+                    resp_meta["policy_decision"] = decision.metadata["policy_decision"]
                 return TaskExecutionResult(
                     success=True,
                     task=clean_task,
@@ -319,7 +334,7 @@ class TaskExecutor:
                     target=TARGET_LOCAL,
                     latency_ms=local_resp.latency_ms,
                     tokens_used=local_resp.tokens_used,
-                    metadata=local_resp.metadata,
+                    metadata=resp_meta,
                 )
 
             # Local execution failed: Check fallback eligibility

@@ -537,11 +537,12 @@ def execute_task():
     temperature = data.get("temperature")
     max_tokens = data.get("max_tokens")
     allow_cloud_fallback = data.get("allow_cloud_fallback")
+    complexity = data.get("complexity")
 
     # Security: Disallow user-controlled endpoint URLs and credentials
     cleaned_kwargs = {k: v for k, v in data.items() if k not in (
         "task", "prompt", "system_prompt", "images", "temperature", "max_tokens", "allow_cloud_fallback",
-        "base_url", "url", "provider_url", "endpoint", "api_key", "token"
+        "complexity", "base_url", "url", "provider_url", "endpoint", "api_key", "token"
     )}
 
     try:
@@ -553,6 +554,7 @@ def execute_task():
             temperature=float(temperature) if temperature is not None else None,
             max_tokens=int(max_tokens) if max_tokens is not None else None,
             allow_cloud_fallback=bool(allow_cloud_fallback) if allow_cloud_fallback is not None else None,
+            complexity=str(complexity).strip().lower() if isinstance(complexity, str) and complexity.strip() else None,
             **cleaned_kwargs,
         )
 

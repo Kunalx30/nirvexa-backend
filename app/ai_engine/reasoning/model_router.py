@@ -158,6 +158,7 @@ class ModelRouter:
         local_provider: Optional[Any] = None,
         discovery: Optional[Any] = None,
         policy: Optional[Any] = None,
+        complexity: Optional[str] = None,
     ) -> ModelRouteDecision:
         """
         Resolves the appropriate provider and model for a given task.
@@ -168,6 +169,7 @@ class ModelRouter:
             local_provider: Optional pre-existing local provider instance for health checking.
             discovery: Optional LocalModelDiscovery instance to check model availability.
             policy: Optional LocalModelPolicy instance to assess suitability and recommendations.
+            complexity: Optional complexity level string ('low', 'medium', 'high').
 
         Returns:
             ModelRouteDecision containing target, provider, model, and fallback indicators.
@@ -316,15 +318,29 @@ class ModelRouter:
                 is_vision=False,
             )
 
-        if policy is not None:
+        # Advisory Policy Evaluation (Phase 8)
+        active_policy = policy
+        if active_policy is None and bool(_conf("AI_ENGINE_LOCAL_POLICY_ENABLED", False)):
             try:
-                rec = policy.recommend_model(clean_task)
+                from app.ai_engine.reasoning.model_policy import LocalModelPolicy
+                active_policy = LocalModelPolicy(discovery=discovery)
+            except Exception as exc:
+                logger.debug("[ModelRouter] Default policy instantiation skipped: %s", exc)
+
+        if active_policy is not None:
+            try:
+                rec = active_policy.recommend_model(clean_task, complexity=complexity)
                 if rec:
                     decision.metadata["recommended_model"] = rec
                 if decision.model:
-                    suit = policy.evaluate_suitability(clean_task, decision.model)
+                    suit = active_policy.evaluate_suitability(clean_task, decision.model, complexity=complexity)
                     decision.metadata["model_suitable"] = suit.suitable
                     decision.metadata["policy_reasons"] = suit.reason_codes
+                    decision.metadata["policy_decision"] = suit.to_dict()
+                elif rec:
+                    # Model not configured, evaluate recommended candidate for advisory metadata
+                    sel = active_policy.select_model(clean_task, complexity=complexity)
+                    decision.metadata["policy_decision"] = sel.to_dict()
             except Exception as exc:
                 logger.debug("[ModelRouter] Policy evaluation skipped: %s", exc)
 
