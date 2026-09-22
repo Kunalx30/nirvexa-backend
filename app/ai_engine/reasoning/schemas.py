@@ -58,6 +58,10 @@ class GenerationMetadata(BaseModel):
     retries_used: int = 0
     total_evidence_chunks: int = 0
     cited_chunks_count: int = 0
+    target: Optional[str] = None
+    fallback_triggered: Optional[bool] = None
+    fallback_reason: Optional[str] = None
+
 
 
 class EvidenceSummary(BaseModel):

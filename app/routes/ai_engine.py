@@ -476,3 +476,96 @@ def delete_document(document_id: str):
             "error": "delete_failed",
             "message": "An error occurred while deleting the document.",
         }), 500
+
+
+# ==============================================================================
+# Phase 7 Task-Aware Execution Endpoint
+# ==============================================================================
+
+@ai_engine_bp.route("/execute", methods=["POST"])
+@ai_engine_bp.route("/task/execute", methods=["POST"])
+@token_required
+@limiter.limit("30 per minute")
+def execute_task():
+    """
+    POST /api/ai/execute
+    Centralized Task-Aware Execution Endpoint.
+    Routes tasks (resume, classification, extraction, chat, research, salary_analysis,
+    company_review, vision, document_vision, text_generation) to local or cloud models.
+    Authenticated: requires valid JWT Bearer access token.
+    Rate-limited: 30 requests per IP per minute.
+    """
+    # 1. Feature flag guard
+    if not current_app.config.get("AI_ENGINE_ENABLED", False):
+        return jsonify({
+            "error": "ai_engine_disabled",
+            "message": "AI Engine is currently disabled.",
+        }), 503
+
+    # 2. Enforce request body size limit
+    content_length = request.content_length
+    if content_length is not None and content_length > _MAX_REQUEST_BYTES:
+        return jsonify({
+            "error": "request_too_large",
+            "message": f"Request body must not exceed {_MAX_REQUEST_BYTES} bytes.",
+        }), 413
+
+    # 3. Extract JSON body
+    data = request.get_json(silent=True)
+    if data is None or not isinstance(data, dict) or not data:
+        return jsonify({
+            "error": "validation_error",
+            "message": "Request body must be a non-empty JSON object containing 'task' and 'prompt'.",
+        }), 400
+
+    task = data.get("task")
+    prompt = data.get("prompt")
+    if not task or not isinstance(task, str) or not task.strip():
+        return jsonify({
+            "error": "validation_error",
+            "message": "Missing or invalid 'task' field.",
+        }), 400
+
+    if not prompt or not isinstance(prompt, str) or not prompt.strip():
+        return jsonify({
+            "error": "validation_error",
+            "message": "Missing or invalid 'prompt' field.",
+        }), 400
+
+    system_prompt = data.get("system_prompt")
+    images = data.get("images")
+    temperature = data.get("temperature")
+    max_tokens = data.get("max_tokens")
+    allow_cloud_fallback = data.get("allow_cloud_fallback")
+
+    # Security: Disallow user-controlled endpoint URLs and credentials
+    cleaned_kwargs = {k: v for k, v in data.items() if k not in (
+        "task", "prompt", "system_prompt", "images", "temperature", "max_tokens", "allow_cloud_fallback",
+        "base_url", "url", "provider_url", "endpoint", "api_key", "token"
+    )}
+
+    try:
+        result = _engine.execute_task(
+            task=task.strip(),
+            prompt=prompt.strip(),
+            system_prompt=system_prompt.strip() if isinstance(system_prompt, str) and system_prompt.strip() else None,
+            images=images if isinstance(images, list) else None,
+            temperature=float(temperature) if temperature is not None else None,
+            max_tokens=int(max_tokens) if max_tokens is not None else None,
+            allow_cloud_fallback=bool(allow_cloud_fallback) if allow_cloud_fallback is not None else None,
+            **cleaned_kwargs,
+        )
+
+        payload = result.to_dict() if hasattr(result, "to_dict") else dict(result)
+        from app.ai_engine.reasoning.task_executor import _scrub_credentials
+        if isinstance(payload.get("error_message"), str):
+            payload["error_message"] = _scrub_credentials(payload["error_message"])
+        status_code = 200 if result.success else 503
+        return jsonify(payload), status_code
+
+    except Exception as e:
+        logger.error("[AI Engine] Unhandled task execution error for task=%s: %s", task, e, exc_info=True)
+        return jsonify({
+            "error": "execution_failed",
+            "message": "An error occurred while executing AI task.",
+        }), 500

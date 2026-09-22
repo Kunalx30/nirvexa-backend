@@ -67,15 +67,34 @@ class LLMProviderFactory:
                 **kwargs,
             )
 
-        if resolved_name == "ollama":
-            resolved_model = model or _conf("AI_ENGINE_LLM_MODEL", "llama3.2")
-            base_url = kwargs.get("base_url") or _conf("AI_ENGINE_OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        if resolved_name in ("ollama", "local"):
+            resolved_model = model or _conf("AI_ENGINE_LOCAL_MODEL", "llama3.2")
+            base_url = kwargs.get("base_url") or _conf(
+                "AI_ENGINE_LOCAL_BASE_URL",
+                _conf("AI_ENGINE_OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            )
+            api_key = kwargs.get("api_key") or _conf("AI_ENGINE_LOCAL_API_KEY", "ollama")
+            resolved_timeout = (
+                timeout_seconds
+                if timeout_seconds is not None
+                else _conf("AI_ENGINE_LOCAL_TIMEOUT_SECONDS", 60)
+            )
+            max_concurrency = kwargs.get("max_concurrency") or _conf(
+                "AI_ENGINE_LOCAL_MAX_CONCURRENCY", 1
+            )
+            health_check_timeout = _conf(
+                "AI_ENGINE_LOCAL_HEALTH_CHECK_TIMEOUT_SECONDS", 5
+            )
             return OllamaLLMProvider(
                 model=resolved_model,
                 base_url=base_url,
+                api_key=api_key,
                 timeout_seconds=resolved_timeout,
                 temperature=resolved_temp,
                 max_tokens=resolved_tokens,
+                max_concurrency=max_concurrency,
+                health_check_timeout_seconds=health_check_timeout,
+                **kwargs,
             )
 
         if resolved_name in ("openai_compat", "openai"):
@@ -100,7 +119,7 @@ class LLMProviderFactory:
 
         raise LLMProviderError(
             f"Unsupported AI Engine LLM provider: '{resolved_name}'. "
-            f"Supported providers: gemini, ollama, openai_compat, mock.",
+            f"Supported providers: gemini, ollama, local, openai_compat, mock.",
             provider=resolved_name,
         )
 

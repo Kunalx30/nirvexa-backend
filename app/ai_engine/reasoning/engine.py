@@ -6,7 +6,7 @@ selection and retries, and validates inline citations without performing web req
 """
 import time
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 from config import Config
 from app.ai_engine.reasoning.prompt_builder import PromptBuilder
@@ -48,6 +48,7 @@ class ReasoningEngine:
         self,
         provider: Optional[BaseLLMProvider] = None,
         max_retries: Optional[int] = None,
+        task_executor: Optional[Any] = None,
     ):
         self._provider = provider
         self.max_retries = (
@@ -55,6 +56,7 @@ class ReasoningEngine:
             if max_retries is not None
             else _get_config_value("AI_ENGINE_LLM_MAX_RETRIES", 2)
         )
+        self.task_executor = task_executor
 
     def _resolve_provider(self) -> BaseLLMProvider:
         if self._provider is not None:
@@ -69,15 +71,18 @@ class ReasoningEngine:
     ) -> AnswerResponse:
         """
         Synthesizes a grounded answer backed by the provided EvidencePack.
+        Uses task-aware TaskExecutor routing.
         """
         start_time = time.monotonic()
         clean_query = query.strip()
-        active_provider = provider or self._resolve_provider()
+        active_provider = provider or self._provider
 
         # Step 1: Handle empty EvidencePack without invoking LLM
         if not evidence_pack or not evidence_pack.items:
             logger.info("[ReasoningEngine] Empty EvidencePack for query=%r — skipping LLM call", clean_query)
             elapsed = (time.monotonic() - start_time) * 1000
+            prov_name = active_provider.name if active_provider else "unknown"
+            prov_model = active_provider.model if active_provider else "unknown"
             return AnswerResponse(
                 query=clean_query,
                 answer="Based on the retrieved sources, there is insufficient evidence to determine an answer to your query.",
@@ -89,8 +94,8 @@ class ReasoningEngine:
                     total_characters=0,
                 ),
                 generation_metadata=GenerationMetadata(
-                    provider=active_provider.name,
-                    model=active_provider.model,
+                    provider=prov_name,
+                    model=prov_model,
                     execution_time_ms=round(elapsed, 2),
                     retries_used=0,
                     total_evidence_chunks=0,
@@ -101,40 +106,69 @@ class ReasoningEngine:
         # Step 2: Build fenced prompt and citation mapping
         sys_instruction, user_prompt, citation_map = PromptBuilder.build(clean_query, evidence_pack)
 
-        # Step 3: Invoke LLM provider with retry logic for transient errors
+        # Step 3: Invoke TaskExecutor with retry logic for transient errors
         retries_used = 0
-        gen_result = None
+        exec_result = None
         last_error = None
 
+        from app.ai_engine.reasoning.task_executor import TaskExecutor
+        if self.task_executor is not None and provider is None:
+            executor = self.task_executor
+        else:
+            executor = TaskExecutor(cloud_provider=active_provider)
+
         for attempt in range(self.max_retries + 1):
+            retries_used = attempt
             try:
-                gen_result = active_provider.generate(
+                exec_result = executor.execute(
+                    task="research",
                     prompt=user_prompt,
-                    system_instruction=sys_instruction,
+                    system_prompt=sys_instruction,
                 )
-                retries_used = attempt
-                break
-            except (ProviderTimeoutError, ProviderRateLimitError, LLMProviderError) as exc:
+            except Exception as exc:
                 last_error = exc
-                retries_used = attempt
-                is_retryable = getattr(exc, "retryable", False) or isinstance(exc, (ProviderTimeoutError, ProviderRateLimitError))
-                if is_retryable and attempt < self.max_retries:
+                is_retryable = attempt < self.max_retries
+                if is_retryable:
                     sleep_sec = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "[ReasoningEngine] Retryable error (attempt %d/%d) on provider %s: %s. Retrying in %.1fs",
-                        attempt + 1, self.max_retries, active_provider.name, exc, sleep_sec,
+                        "[ReasoningEngine] Retryable execution exception (attempt %d/%d): %s. Retrying in %.1fs",
+                        attempt + 1, self.max_retries, exc, sleep_sec,
                     )
                     time.sleep(sleep_sec)
                     continue
-                logger.error("[ReasoningEngine] Provider failed permanently on attempt %d: %s", attempt + 1, exc)
+                logger.error("[ReasoningEngine] Execution failed permanently on attempt %d: %s", attempt + 1, exc)
                 raise
 
-        if gen_result is None:
-            raise last_error or LLMProviderError("Generation returned no result.", provider=active_provider.name)
+            if exec_result.success:
+                break
+
+            # Handle retryable failure codes from TaskExecutionResult
+            err_code = exec_result.error_code or ""
+            is_retryable = err_code in (
+                "CLOUD_EXECUTION_ERROR",
+                "LOCAL_MODEL_TIMEOUT",
+                "PROVIDER_TIMEOUT",
+                "PROVIDER_RATE_LIMIT",
+            )
+            if is_retryable and attempt < self.max_retries:
+                sleep_sec = 0.5 * (2 ** attempt)
+                logger.warning(
+                    "[ReasoningEngine] Retryable error (attempt %d/%d) on task research: %s (%s). Retrying in %.1fs",
+                    attempt + 1, self.max_retries, exec_result.error_code, exec_result.error_message, sleep_sec,
+                )
+                time.sleep(sleep_sec)
+                continue
+
+            break
+
+        if exec_result is None or not exec_result.success:
+            err_msg = exec_result.error_message if exec_result else "Generation returned no result."
+            prov_name = exec_result.provider if exec_result else (active_provider.name if active_provider else "unknown")
+            raise last_error or LLMProviderError(err_msg, provider=prov_name)
 
         # Step 4: Validate citations and evaluate grounding status
         grounding_status, valid_citations, hallucinated_ids = CitationValidator.validate(
-            generated_text=gen_result.text,
+            generated_text=exec_result.text or "",
             citation_map=citation_map,
             total_evidence_count=len(evidence_pack.items),
         )
@@ -149,7 +183,7 @@ class ReasoningEngine:
 
         return AnswerResponse(
             query=clean_query,
-            answer=gen_result.text,
+            answer=exec_result.text or "",
             grounding_status=grounding_status,
             citations=valid_citations,
             evidence_summary=EvidenceSummary(
@@ -158,11 +192,14 @@ class ReasoningEngine:
                 total_characters=evidence_pack.total_characters,
             ),
             generation_metadata=GenerationMetadata(
-                provider=gen_result.provider,
-                model=gen_result.model,
+                provider=exec_result.provider,
+                model=exec_result.model or "unknown",
                 execution_time_ms=round(elapsed, 2),
                 retries_used=retries_used,
                 total_evidence_chunks=len(evidence_pack.items),
                 cited_chunks_count=len(valid_citations),
+                target=exec_result.target,
+                fallback_triggered=exec_result.metadata.get("fallback_triggered"),
+                fallback_reason=exec_result.metadata.get("fallback_reason"),
             ),
         )

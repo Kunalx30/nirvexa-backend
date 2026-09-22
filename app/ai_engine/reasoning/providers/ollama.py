@@ -1,10 +1,12 @@
 """
 app/ai_engine/reasoning/providers/ollama.py
 Ollama Local Model Provider utilizing the pre-installed standard OpenAI SDK.
-Connects to Ollama's local OpenAI-compatible endpoint (http://localhost:11434/v1).
+Connects to local OpenAI-compatible endpoints (Ollama, LM Studio, vLLM, LocalAI)
+with thread-safe bounded concurrency and lightweight health checking.
 """
 import logging
-from typing import Optional
+import threading
+from typing import Optional, Dict, Any
 
 import openai
 
@@ -19,20 +21,48 @@ from app.ai_engine.reasoning.schemas import LLMGenerationResult
 
 logger = logging.getLogger(__name__)
 
+# Thread-safe global registry of concurrency semaphores keyed by base_url
+_local_semaphore_lock = threading.Lock()
+_local_semaphores: Dict[str, threading.Semaphore] = {}
+
+
+def _get_local_semaphore(base_url: str, max_concurrency: int) -> threading.Semaphore:
+    """
+    Retrieves or creates a thread-safe Semaphore for the given local endpoint.
+    Ensures bounded concurrency across concurrent Flask requests to prevent VRAM/RAM exhaustion.
+    """
+    clean_url = base_url.rstrip("/")
+    with _local_semaphore_lock:
+        key = f"{clean_url}::{max_concurrency}"
+        if key not in _local_semaphores:
+            _local_semaphores[key] = threading.Semaphore(max_concurrency)
+        return _local_semaphores[key]
+
+
+def _reset_local_semaphores() -> None:
+    """Reset the registry for test isolation."""
+    with _local_semaphore_lock:
+        _local_semaphores.clear()
+
 
 class OllamaLLMProvider(BaseLLMProvider):
     """
-    Ollama Local Model Provider.
-    Enables local SLM/LLM inference (e.g. LLaMA 3.2, Qwen, Mistral) with zero new dependencies.
+    Ollama & OpenAI-compatible Local Model Provider.
+    Enables local SLM/LLM inference with zero new dependencies, resource-aware
+    bounded concurrency, and non-blocking connectivity health checking.
     """
 
     def __init__(
         self,
         model: str = "llama3.2",
         base_url: str = "http://localhost:11434/v1",
-        timeout_seconds: int = 30,
+        api_key: str = "ollama",
+        timeout_seconds: int = 60,
         temperature: float = 0.2,
         max_tokens: int = 1024,
+        max_concurrency: int = 1,
+        health_check_timeout_seconds: int = 5,
+        **kwargs,
     ):
         super().__init__(
             model=model,
@@ -41,20 +71,55 @@ class OllamaLLMProvider(BaseLLMProvider):
             max_tokens=max_tokens,
         )
         self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or "ollama"
+        self.max_concurrency = max(1, min(int(max_concurrency), 8))
+        self.health_check_timeout_seconds = max(1, min(int(health_check_timeout_seconds), 30))
         self._client: Optional[openai.OpenAI] = None
+
+        # Allow passing an explicit semaphore for test injection, otherwise use registry
+        self._semaphore = kwargs.get("semaphore") or _get_local_semaphore(
+            self.base_url, self.max_concurrency
+        )
 
     @property
     def name(self) -> str:
         return "ollama"
 
+    @property
+    def semaphore(self) -> threading.Semaphore:
+        return self._semaphore
+
     def _get_client(self) -> openai.OpenAI:
         if self._client is None:
             self._client = openai.OpenAI(
                 base_url=self.base_url,
-                api_key="ollama",  # Dummy key required by OpenAI client format
+                api_key=self.api_key,
                 timeout=float(self.timeout_seconds),
             )
         return self._client
+
+    def check_health(self, timeout_seconds: Optional[int] = None) -> bool:
+        """
+        Lightweight connectivity check for the local model runtime.
+        Returns True if reachable and responsive, False otherwise.
+        Never raises exceptions or exposes credentials.
+        """
+        eff_timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else self.health_check_timeout_seconds
+        )
+        try:
+            client = self._get_client()
+            client.models.list(timeout=float(eff_timeout))
+            return True
+        except Exception as exc:
+            logger.warning(
+                "[OllamaProvider] Health check failed for local runtime at %s: %s",
+                self.base_url,
+                type(exc).__name__,
+            )
+            return False
 
     def generate(
         self,
@@ -74,15 +139,18 @@ class OllamaLLMProvider(BaseLLMProvider):
 
         try:
             logger.info(
-                "[OllamaProvider] Dispatching request model=%s base_url=%s max_tokens=%d",
-                self.model, self.base_url, eff_max_tokens,
+                "[OllamaProvider] Dispatching local request model=%s base_url=%s max_tokens=%d timeout=%ds",
+                self.model, self.base_url, eff_max_tokens, self.timeout_seconds,
             )
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=eff_max_tokens,
-                temperature=eff_temperature,
-            )
+
+            # Resource-conscious bounded concurrency: acquire semaphore slot during local inference
+            with self._semaphore:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=eff_max_tokens,
+                    temperature=eff_temperature,
+                )
 
             if not response.choices or not response.choices[0].message:
                 raise LLMProviderError("Ollama returned an empty response choice.", provider="ollama")
@@ -114,9 +182,11 @@ class OllamaLLMProvider(BaseLLMProvider):
             raise ProviderRateLimitError("Ollama rate limit exceeded.", provider="ollama") from exc
 
         except openai.APIStatusError as exc:
-            logger.error("[OllamaProvider] API status error: status=%s response=%s", exc.status_code, exc.response)
+            logger.error("[OllamaProvider] API status error: status=%s", exc.status_code)
             raise LLMProviderError(f"Ollama API returned HTTP error: {exc.status_code}", provider="ollama") from exc
 
         except Exception as exc:
+            if isinstance(exc, LLMProviderError):
+                raise
             logger.error("[OllamaProvider] Unexpected error during generation: %s", exc)
             raise LLMProviderError(f"Ollama generation failed: {exc}", provider="ollama") from exc

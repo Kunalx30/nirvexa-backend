@@ -217,6 +217,78 @@ class Config:
         default=0.10, min_val=0.0, max_val=0.5
     )
 
+    # AI Engine Phase 7 Local Model & Runtime
+    AI_ENGINE_LOCAL_MODEL = os.getenv("AI_ENGINE_LOCAL_MODEL", "llama3.2").strip()
+    AI_ENGINE_LOCAL_BASE_URL = (
+        os.getenv("AI_ENGINE_LOCAL_BASE_URL")
+        or os.getenv("AI_ENGINE_OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    ).strip()
+    AI_ENGINE_LOCAL_API_KEY = os.getenv("AI_ENGINE_LOCAL_API_KEY", "ollama").strip()
+    AI_ENGINE_LOCAL_TIMEOUT_SECONDS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LOCAL_TIMEOUT_SECONDS", "60"),
+        default=60, min_val=5, max_val=300
+    )
+    AI_ENGINE_LOCAL_MAX_CONCURRENCY = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LOCAL_MAX_CONCURRENCY", "1"),
+        default=1, min_val=1, max_val=8
+    )
+    AI_ENGINE_LOCAL_HEALTH_CHECK_ENABLED = os.getenv(
+        "AI_ENGINE_LOCAL_HEALTH_CHECK_ENABLED", "true"
+    ).lower() in ("true", "1", "yes")
+    AI_ENGINE_LOCAL_HEALTH_CHECK_TIMEOUT_SECONDS = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LOCAL_HEALTH_CHECK_TIMEOUT_SECONDS", "5"),
+        default=5, min_val=1, max_val=30
+    )
+
+    # AI Engine Phase 7 Model Routing & Task Abstraction
+    AI_ENGINE_MODEL_ROUTING_ENABLED = os.getenv(
+        "AI_ENGINE_MODEL_ROUTING_ENABLED", "true"
+    ).lower() in ("true", "1", "yes")
+    AI_ENGINE_LOCAL_TEXT_MODEL = (
+        os.getenv("AI_ENGINE_LOCAL_TEXT_MODEL")
+        or os.getenv("AI_ENGINE_LOCAL_MODEL", "llama3.2")
+    ).strip()
+    AI_ENGINE_LOCAL_VISION_MODEL = os.getenv("AI_ENGINE_LOCAL_VISION_MODEL", "").strip()
+    AI_ENGINE_CLOUD_PROVIDER = os.getenv("AI_ENGINE_CLOUD_PROVIDER", "gemini").strip().lower()
+    AI_ENGINE_LOCAL_FALLBACK_TO_CLOUD = os.getenv(
+        "AI_ENGINE_LOCAL_FALLBACK_TO_CLOUD", "true"
+    ).lower() in ("true", "1", "yes")
+
+    # Task to Target Mappings
+    AI_ENGINE_RESUME_MODEL_TARGET = os.getenv("AI_ENGINE_RESUME_MODEL_TARGET", "local").strip().lower()
+    AI_ENGINE_CLASSIFICATION_MODEL_TARGET = os.getenv("AI_ENGINE_CLASSIFICATION_MODEL_TARGET", "local").strip().lower()
+    AI_ENGINE_EXTRACTION_MODEL_TARGET = os.getenv("AI_ENGINE_EXTRACTION_MODEL_TARGET", "local").strip().lower()
+    AI_ENGINE_VISION_MODEL_TARGET = os.getenv("AI_ENGINE_VISION_MODEL_TARGET", "vision_local").strip().lower()
+    AI_ENGINE_DOCUMENT_VISION_MODEL_TARGET = os.getenv("AI_ENGINE_DOCUMENT_VISION_MODEL_TARGET", "vision_local").strip().lower()
+    AI_ENGINE_CHAT_MODEL_TARGET = os.getenv("AI_ENGINE_CHAT_MODEL_TARGET", "cloud").strip().lower()
+    AI_ENGINE_RESEARCH_MODEL_TARGET = os.getenv("AI_ENGINE_RESEARCH_MODEL_TARGET", "cloud").strip().lower()
+    AI_ENGINE_SALARY_MODEL_TARGET = os.getenv("AI_ENGINE_SALARY_MODEL_TARGET", "cloud").strip().lower()
+    AI_ENGINE_COMPANY_REVIEW_MODEL_TARGET = os.getenv("AI_ENGINE_COMPANY_REVIEW_MODEL_TARGET", "cloud").strip().lower()
+    AI_ENGINE_TEXT_GENERATION_MODEL_TARGET = os.getenv("AI_ENGINE_TEXT_GENERATION_MODEL_TARGET", "cloud").strip().lower()
+
+    # AI Engine Phase 7 Local Model Policy & Capability Selection
+    AI_ENGINE_LOCAL_POLICY_ENABLED = os.getenv(
+        "AI_ENGINE_LOCAL_POLICY_ENABLED", "true"
+    ).lower() in ("true", "1", "yes")
+    AI_ENGINE_LOCAL_PREFER_SMALLEST_MODEL = os.getenv(
+        "AI_ENGINE_LOCAL_PREFER_SMALLEST_MODEL", "true"
+    ).lower() in ("true", "1", "yes")
+    AI_ENGINE_LOCAL_REQUIRE_KNOWN_VISION_CAPABILITY = os.getenv(
+        "AI_ENGINE_LOCAL_REQUIRE_KNOWN_VISION_CAPABILITY", "true"
+    ).lower() in ("true", "1", "yes")
+    AI_ENGINE_LOCAL_MAX_MODEL_VRAM_GB = _safe_float.__func__(
+        os.getenv("AI_ENGINE_LOCAL_MAX_MODEL_VRAM_GB", "0.0"),
+        default=0.0, min_val=0.0, max_val=128.0
+    )
+    AI_ENGINE_LOCAL_MAX_MODEL_RAM_GB = _safe_float.__func__(
+        os.getenv("AI_ENGINE_LOCAL_MAX_MODEL_RAM_GB", "0.0"),
+        default=0.0, min_val=0.0, max_val=256.0
+    )
+    AI_ENGINE_LOCAL_DEFAULT_CONTEXT_LENGTH = _safe_int.__func__(
+        os.getenv("AI_ENGINE_LOCAL_DEFAULT_CONTEXT_LENGTH", "4096"),
+        default=4096, min_val=512, max_val=131072
+    )
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10

@@ -6,7 +6,7 @@ and content extraction into structured ResearchResponse objects.
 import time
 from datetime import datetime, timezone
 import logging
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 from app.ai_engine.extraction.content_extractor import ContentExtractor
 from app.ai_engine.fetch.url_validator import normalize_url
@@ -43,12 +43,41 @@ class WebResearchEngine:
         evidence_builder: Optional[EvidenceBuilder] = None,
         reasoning_engine: Optional[ReasoningEngine] = None,
         document_service: Optional[DocumentService] = None,
+        task_executor: Optional[Any] = None,
     ):
         self.search_service = search_service or SearchService()
         self.fetcher = fetcher or WebFetcher()
         self.evidence_builder = evidence_builder or EvidenceBuilder()
-        self.reasoning_engine = reasoning_engine or ReasoningEngine()
+        from app.ai_engine.reasoning.task_executor import TaskExecutor
+        self.task_executor = task_executor or TaskExecutor()
+        self.reasoning_engine = reasoning_engine or ReasoningEngine(task_executor=self.task_executor)
         self.document_service = document_service or DocumentService()
+
+    def execute_task(
+        self,
+        task: str,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        images: Optional[List[Any]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        allow_cloud_fallback: Optional[bool] = None,
+        **kwargs,
+    ) -> Any:
+        """
+        Phase 7 Step 7: Centralized task execution entrypoint.
+        Routes the task through ModelRouter and dispatches to LocalModelAdapter or Cloud provider.
+        """
+        return self.task_executor.execute(
+            task=task,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            images=images,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            allow_cloud_fallback=allow_cloud_fallback,
+            **kwargs,
+        )
 
     def research(self, request: SearchRequest) -> ResearchResponse:
         """
