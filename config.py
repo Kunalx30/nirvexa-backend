@@ -193,6 +193,30 @@ class Config:
         default=30, min_val=5, max_val=100
     )
 
+    # AI Engine Phase 6 Advanced Reranking
+    _reranker_type_raw = os.getenv("AI_ENGINE_RERANKER_TYPE", "keyword").lower().strip()
+    AI_ENGINE_RERANKER_TYPE = _reranker_type_raw if _reranker_type_raw in ("keyword", "multi_signal") else "keyword"
+    AI_ENGINE_RERANK_WEIGHT_LEXICAL = _safe_float.__func__(
+        os.getenv("AI_ENGINE_RERANK_WEIGHT_LEXICAL", "0.35"),
+        default=0.35, min_val=0.0, max_val=1.0
+    )
+    AI_ENGINE_RERANK_WEIGHT_SEMANTIC = _safe_float.__func__(
+        os.getenv("AI_ENGINE_RERANK_WEIGHT_SEMANTIC", "0.30"),
+        default=0.30, min_val=0.0, max_val=1.0
+    )
+    AI_ENGINE_RERANK_WEIGHT_SOURCE_QUALITY = _safe_float.__func__(
+        os.getenv("AI_ENGINE_RERANK_WEIGHT_SOURCE_QUALITY", "0.15"),
+        default=0.15, min_val=0.0, max_val=1.0
+    )
+    AI_ENGINE_RERANK_WEIGHT_FRESHNESS = _safe_float.__func__(
+        os.getenv("AI_ENGINE_RERANK_WEIGHT_FRESHNESS", "0.10"),
+        default=0.10, min_val=0.0, max_val=1.0
+    )
+    AI_ENGINE_RERANK_DIVERSITY_PENALTY = _safe_float.__func__(
+        os.getenv("AI_ENGINE_RERANK_DIVERSITY_PENALTY", "0.10"),
+        default=0.10, min_val=0.0, max_val=0.5
+    )
+
     # Interview AI Config
     INTERVIEW_SESSION_EXPIRY = 3600  # 1 hour in seconds
     MAX_INTERVIEW_QUESTIONS = 10

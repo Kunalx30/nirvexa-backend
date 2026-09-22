@@ -11,6 +11,7 @@ from config import Config
 from app.ai_engine.retrieval.chunking import TextChunker
 from app.ai_engine.retrieval.reranker.base import BaseReranker
 from app.ai_engine.retrieval.reranker.keyword import KeywordReranker
+from app.ai_engine.retrieval.reranker.factory import RerankerFactory
 from app.ai_engine.retrieval.schemas import (
     RetrievalResult,
     EvidenceItem,
@@ -49,7 +50,16 @@ class EvidenceBuilder:
             default_max_chunk_chars=_get_app_config("AI_ENGINE_MAX_CHUNK_CHARS", 1000),
             default_overlap_chars=_get_app_config("AI_ENGINE_CHUNK_OVERLAP_CHARS", 100),
         )
-        self.reranker = reranker or KeywordReranker(
+        self._reranker = reranker
+
+    @property
+    def reranker(self) -> BaseReranker:
+        return self._resolve_reranker()
+
+    def _resolve_reranker(self) -> BaseReranker:
+        if self._reranker is not None:
+            return self._reranker
+        return RerankerFactory.get_reranker(
             min_relevance_score=_get_app_config("AI_ENGINE_MIN_RELEVANCE_SCORE", 0.10),
             filter_low_relevance=True,
         )
