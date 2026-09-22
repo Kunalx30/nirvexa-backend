@@ -1,4 +1,4 @@
-# NirVexa
+# Nyrvexa
 
 > An enterprise-grade full-stack career acceleration, interview intelligence, and talent analytics platform powered by multi-provider AI, vector semantic search, and publication-quality LaTeX resume compilation.
 
